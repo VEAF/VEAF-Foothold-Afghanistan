@@ -1,0 +1,5 @@
+veaf-tools-updater.exe
+veaf-tools.exe
+*.log
+temp/
+.copilot-docs/VEAF_common_modifications.md
