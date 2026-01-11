@@ -60,8 +60,8 @@ GlobalSettings.setDifficultyScaling(1.3,1) --red respawn factor
 GlobalSettings.setDifficultyScaling(1.0,2) --blue respawn facto
 
 -- Set the autosuspend for performance
-GlobalSettings.autoSuspendNmBlue = 80 -- suspend blue zones deeper than this nm
-GlobalSettings.autoSuspendNmRed = 90  -- suspend red zones deeper than this nm
+--GlobalSettings.autoSuspendNmBlue = 80 -- suspend blue zones deeper than this nm
+--GlobalSettings.autoSuspendNmRed = 90  -- suspend red zones deeper than this nm
 
 LogisticCommander.allowedTypes = {}
 LogisticCommander.allowedTypes['Ka-50'] = false

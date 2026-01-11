@@ -1,10 +1,10 @@
-# VEAF Foothold Afghanistan v0.0.978
+# VEAF Foothold Afghanistan v0.0.995
 
 ## Presentation
 
 This is a modification of the original Foothold Afghanistan mission by Leka, that I adapted to make it load all the script files and config directly from the server.
 
-**Done using the latest version updated on 2026.01.05.**
+**Done using the latest version updated on 2026.01.11.**
 
 ## Update
 

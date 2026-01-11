@@ -4042,7 +4042,7 @@ function BattleCommander:printDailyTop(unitid, top)
 		end
 	end
 	
-function BattleCommander:debit(coalition, amount, buyerGroupId, buyerGroupObj, reason)
+function BattleCommander:debit(coalition, amount, buyerGroupId, buyerGroupObj, reason, reqRank)
     if not amount or amount <= 0 then return true end
     local buyerName = "Unknown"
     if buyerGroupId and self.playerNames and self.playerNames[buyerGroupId] then
@@ -4054,9 +4054,20 @@ function BattleCommander:debit(coalition, amount, buyerGroupId, buyerGroupObj, r
     end
     local label = reason or "CTLD action"
 
+    local requiredRank = tonumber(reqRank) or 0
+    if requiredRank > 0 and RankingSystem and buyerGroupId and self.playerNames and self.playerNames[buyerGroupId] then
+        local pname = self.playerNames[buyerGroupId]
+        local myRank = self:getPlayerRank(pname) or 0
+        if myRank < requiredRank then
+            local msg = string.format("Insufficient rank for %s. Need rank %d, you are rank %d.", label, requiredRank, myRank)
+            trigger.action.outTextForGroup(buyerGroupId, msg, 12)
+            return false
+        end
+    end
+
     self.accounts[coalition] = tonumber(self.accounts[coalition]) or 0
     if self.accounts[coalition] < amount then
-        local msg = string.format("Not enough credits for %s. Need %d, have %d.", label, amount, self.accounts[coalition])
+		local msg = string.format("Our team does not have enough credits for %s. %d are needed and we currently have %d.\nMore credits are available by completing missions.", label, amount, self.accounts[coalition])
         if buyerGroupId then
             trigger.action.outTextForGroup(buyerGroupId, msg, 12)
         else
@@ -4076,6 +4087,7 @@ function BattleCommander:debit(coalition, amount, buyerGroupId, buyerGroupObj, r
     return true
 end
 
+
 function BattleCommander:credit(coalition, amount, buyerGroupId, buyerGroupObj, reason)
     if not amount or amount <= 0 then return true end
     local buyerName = "Unknown"
@@ -4089,7 +4101,12 @@ function BattleCommander:credit(coalition, amount, buyerGroupId, buyerGroupObj, 
     local label = reason or "refund"
     self.accounts[coalition] = tonumber(self.accounts[coalition]) or 0
     self.accounts[coalition] = self.accounts[coalition] + amount
-    self:addStat(buyerName, "Points refunded", amount)
+    local spent = ((self.playerStats or {})[buyerName] or {})["Points spent"] or 0
+    local delta = -amount
+    if spent + delta < 0 then delta = -spent end
+    if delta ~= 0 then
+        self:addStat(buyerName, "Points spent", delta)
+    end
 
     local msg = string.format("%s — %d credits refunded.", label, amount)
     if buyerGroupId then
@@ -6006,7 +6023,7 @@ end
 					trigger.action.removeMark(event.idx)
 					success=true
 				end
-				if event.text and event.text:lower():find('^farpherenow') then
+				if event.text and event.text:lower():find('^givemefarp') then
 					local p=event.pos
 					local alt=land.getHeight({x=p.x,y=p.z})
 					local coord=COORDINATE:New(p.x,alt,p.z)
@@ -6397,8 +6414,9 @@ function BattleCommander:reindexCombatZones()
 					if mission == 'attack' or mission == 'patrol' then
 						local targetName = gc.targetzone
 						if targetName then
+							local shouldSpawn = gc:shouldSpawn()
 							if mission == 'attack' then
-								if gc:shouldSpawn() or gc.state=='takeoff' or gc.state=='inair' or gc.state=='landed' or gc.state=='enroute' or gc.state=='atdestination' then
+								if shouldSpawn or gc.state=='takeoff' or gc.state=='inair' or gc.state=='landed' or gc.state=='enroute' or gc.state=='atdestination' then
 									if originName then activeOrigins[originName] = true end
 								end
 							end
@@ -6406,7 +6424,7 @@ function BattleCommander:reindexCombatZones()
 							if tz and tz.active and not tz.suspended and tz.side ~= 0 then
 								local tzName = tz.zone
 								if tzName and not tzName.isHidden then
-									if gc:shouldSpawn() or gc.state=='takeoff' or gc.state=='inair' or gc.state=='landed' or gc.state=='enroute' or gc.state=='atdestination' then
+									if shouldSpawn or gc.state=='takeoff' or gc.state=='inair' or gc.state=='landed' or gc.state=='enroute' or gc.state=='atdestination' then
 										if mission == 'attack' then
                                             activeTargets[targetName] = true
                                             if originName then
@@ -7354,6 +7372,32 @@ function BattleCommander:_autoZoneSuspend()
 		local toResume  = {}
 		local neighborToResume = {}
 		local supplierHold = {}
+		local incomingActiveSupply = {}
+		local hasSupplyToTarget = {}
+		for _, oz in ipairs(self.zones) do
+			for _, gc in ipairs(oz.groups or {}) do
+				if gc and gc.mission == 'supply' then
+					local targetName = gc.targetzone
+					if targetName then
+						local st = gc.state
+						if st ~= 'inhangar' and st ~= 'dead' then incomingActiveSupply[targetName] = true end
+						local originName = oz.zone
+						if originName then
+							local row = hasSupplyToTarget[originName]
+							if not row then row = {}; hasSupplyToTarget[originName] = row end
+							local mask = row[targetName] or 0
+							if gc.side == 1 then
+								if mask == 0 or mask == 2 then mask = mask + 1 end
+							elseif gc.side == 2 then
+								if mask == 0 or mask == 1 then mask = mask + 2 end
+							end
+							row[targetName] = mask
+						end
+					end
+				end
+			end
+		end
+
 		for _, z in ipairs(self.zones) do
 			if not z.suspended and z.active and z.side~=0 and not z.isHidden and not z.zone:lower():find("red carrier") then
 				if z:canRecieveSupply() then
@@ -7365,9 +7409,9 @@ function BattleCommander:_autoZoneSuspend()
 							local nz = self:getZoneByName(n)
 							if nz and nz.active and nz.side==z.side and not nz.isHidden and not nz.zone:lower():find("red carrier") then
 								local hasSupplyToZ = false
-								for _, gc in ipairs(nz.groups or {}) do
-									if gc and gc.mission == 'supply' and gc.side == z.side and gc.targetzone == z.zone then hasSupplyToZ = true break end
-								end
+								local row = hasSupplyToTarget[nz.zone]
+								local mask = row and row[z.zone]
+								if mask and ((z.side == 1 and (mask == 1 or mask == 3)) or (z.side == 2 and (mask == 2 or mask == 3))) then hasSupplyToZ = true end
 								if hasSupplyToZ and not nz.suspended then
 									supplierHold[nz] = true
 									z._supplySupporters = z._supplySupporters or {}
@@ -7382,9 +7426,9 @@ function BattleCommander:_autoZoneSuspend()
 								local nz = self:getZoneByName(n)
 								if nz and nz.active and nz.side==z.side and not nz.isHidden and not nz.zone:lower():find("red carrier") then
 									local hasSupplyToZ = false
-									for _, gc in ipairs(nz.groups or {}) do
-										if gc and gc.mission == 'supply' and gc.side == z.side and gc.targetzone == z.zone then hasSupplyToZ = true break end
-									end
+									local row = hasSupplyToTarget[nz.zone]
+									local mask = row and row[z.zone]
+									if mask and ((z.side == 1 and (mask == 1 or mask == 3)) or (z.side == 2 and (mask == 2 or mask == 3))) then hasSupplyToZ = true end
 									if hasSupplyToZ and nz.suspended then
 										supplierHold[nz] = true
 										neighborToResume[#neighborToResume+1] = nz
@@ -7420,16 +7464,7 @@ function BattleCommander:_autoZoneSuspend()
 									if oz and oz.active and oz.side~=0 and oz.side~=nz.side and not oz.isHidden then hasOpp = true break end
 								end
 							end
-							local inc = false
-							for _, oz in ipairs(self.zones) do
-								for _, gc in ipairs(oz.groups or {}) do
-									if gc and gc.targetzone == nz.zone and gc.mission == 'supply' then
-										local st = gc.state
-										if st ~= 'inhangar' and st ~= 'dead' then inc = true break end
-									end
-								end
-								if inc then break end
-							end
+							local inc = incomingActiveSupply[nz.zone] == true
 							local canR = nz:canRecieveSupply()
 							local allowResume = hasOpp or (di and di <= li) or inc or canR
 							if allowResume then
@@ -7467,15 +7502,7 @@ function BattleCommander:_autoZoneSuspend()
 						local canReceive = z:canRecieveSupply()
 						local incoming = false
 						if canReceive then
-							for _, oz in ipairs(self.zones) do
-								for _, gc in ipairs(oz.groups or {}) do
-									if gc and gc.targetzone == z.zone and gc.mission == 'supply' then
-										local st = gc.state
-										if st ~= 'inhangar' and st ~= 'dead' then incoming = true break end
-									end
-								end
-								if incoming then break end
-							end
+							incoming = incomingActiveSupply[z.zone] == true
 						end
 						local now = timer.getTime()
 						local proximityHold = z._proximityWakeUntil and z._proximityWakeUntil > now
@@ -7565,15 +7592,7 @@ end
 						local canReceive2 = sz:canRecieveSupply()
 						local incoming2 = false
 						if canReceive2 then
-							for _, oz in ipairs(self.zones) do
-								for _, gc in ipairs(oz.groups or {}) do
-									if gc and gc.targetzone == sz.zone and gc.mission == 'supply' then
-										local st = gc.state
-										if st ~= 'inhangar' and st ~= 'dead' then incoming2 = true break end
-									end
-								end
-								if incoming2 then break end
-							end
+							incoming2 = incomingActiveSupply[sz.zone] == true
 						end
 						local shouldSuspend2 = (not hasOppositeNeighbor) and (not combat2) and (not originActive2) and (not incoming2) and dist and (dist > limit) and (not canReceive2)
 						if shouldSuspend2 then finalSuspend[#finalSuspend+1] = sz end
@@ -8414,12 +8433,16 @@ function BattleCommander:startRewardPlayerContribution(defaultReward, rewards)
 							trigger.action.outTextForCoalition(side,'['..n..'] ejected. +'..tenp..' credits (25% of earnings). Kill statistics lost.',5)
 							self.context:addStat(n,'Points',tenp)
 							self.context:addStat(n,'Deaths',1)
-							local initiatorObjectID=unit:getObjectID()
+							self.context:resetTempStats(n)
+							local aircraftID=event.initiator.id_
+							self.context.csarPlayerAircraftByAircraft = self.context.csarPlayerAircraftByAircraft or {}
+							self.context.csarPlayerAircraftByAircraft[aircraftID]=true
 							local lostCredits=self.context.playerContributions[side][n]*0.75
 							self.context.playerContributions[side][n]=0
 							for _,g in pairs(MissionGroups) do g.killers[n]=nil end
-							local initiatorObjectID=event.initiator:getObjectID()
-							ejectedPilotOwners[initiatorObjectID]={player=n,lostCredits=lostCredits,coalition=side}
+							ejectedPilotOwnersByAircraft = ejectedPilotOwnersByAircraft or {}
+							ejectedPilotOwnersByAircraft[aircraftID] = ejectedPilotOwnersByAircraft[aircraftID] or {}
+							ejectedPilotOwnersByAircraft[aircraftID][#ejectedPilotOwnersByAircraft[aircraftID]+1] = {player=n,lostCredits=lostCredits,coalition=side}
 							if capMissionTarget~=nil and capKillsByPlayer[n]then
 								capKillsByPlayer[n]=0
 							end
@@ -10500,7 +10523,7 @@ local function _autoRestockFriendlyAirbases()
 	end
 end
 
-if WarehouseLogistics == true then
+if WarehouseLogistics == true and AutoFillResources > 0 then
 	SCHEDULER:New(nil, function()
 		_autoRestockFriendlyAirbases()
 	end, {}, 900, 900)
@@ -10890,7 +10913,9 @@ end
 
 				if gr and gr:getSize() > 0 and not marked[i] then
 					local anyAlive = false
-					for _, u in ipairs(gr:getUnits() or {}) do
+					local unitCount = gr:getSize()
+					for uidx=1,unitCount do
+						local u = gr:getUnit(uidx)
 						local life = (u and u:isExist() and u.getLife and u:getLife()) or 0
 						if life >= 1 then anyAlive = true; break end
 					end
@@ -11095,10 +11120,12 @@ end
 			msg = msg .. "\n [WH]"
 		end
 		if self.side == 2 and WarehouseLowSupplies and WarehouseLowSupplies[self.zone] and not self.LogisticCenter then
-			local avg = WarehouseLowSupplies[self.zone]
-			if type(avg) == "number" and avg <= 0 then
+			local supply = WarehouseLowSupplies[self.zone]
+			local avg = supply.avg
+			local entries = supply.entries
+			if (type(entries) == "number" and entries < 500) or (type(avg) == "number" and avg < 10) then
 				msg = msg .. "\n Empty warehouse!"
-			else
+			elseif type(avg) == "number" and avg < 50 then
 				msg = msg .. "\n Low warehouse!"
 			end
 		end
@@ -13112,7 +13139,7 @@ function GroupCommander:shouldSpawn(ignore)
 					local cost = 0
 					if self.side==2 and getAnyPlayersCount() > 0 then
 						local zones = bc.blueZoneCount or 0
-						cost = math.min(zones * 10, 200)
+						cost = math.min(zones * 10, 100)
 						if (bc.accounts[2] ~= nil and bc.accounts[2] < cost) then
 							env.info(string.format("[SUPPLY-SPAWN] not enough funds for supply in %s (have %d, need %d)", tg.zone, bc.accounts[2] or 0, cost))
 							return false
@@ -13385,10 +13412,26 @@ function GroupCommander:_getAirType()
 	return "enemy Bogey"
 end
 
+	function GroupCommander:_getDcsGroupCached()
+		local currentName = self.spawnedName or self.name
+		if self._dcsGroup and self._dcsGroup:isExist() and self._dcsGroup:getName() == currentName then
+			return self._dcsGroup
+		end
+		if not currentName then return nil end
+		local gr = Group.getByName(currentName)
+		if gr and gr:isExist() then
+			self._dcsGroup = gr
+			return gr
+		end
+		self._dcsGroup = nil
+		return nil
+	end
+
 	ProblemGroups = {}
 	function GroupCommander:processAir()
 		local originZone = self.zoneCommander.zone
-		local gr = Group.getByName(self.spawnedName or self.name)
+		local gr = self:_getDcsGroupCached()
+		--local gr = Group.getByName(self.spawnedName or self.name)
 		local zside = self.zoneCommander.side
 		local plane = Unit.Category.AIRPLANE
 		local heli = Unit.Category.HELICOPTER
@@ -13824,7 +13867,8 @@ end
 									local gr = Group.getByName(g:GetName()); if not gr then return end
 									local c = gr:getController()
 									if c then
-										c:setTask(task)
+										SCHEDULER:New(nil,function() c:setTask(task) end,{},2)
+										--c:setTask(task)
 									end
 								end)
                                 local p = COORDINATE:NewFromVec2(startVec2)
@@ -14665,6 +14709,29 @@ do
     ['C-130J-30'] = true,
 }
 
+	LogisticCommander.AllowedCsar = {
+    ['Ka-50'] = true,
+    ['Ka-50_3'] = true,
+    ['Mi-24P'] = true,
+    ['SA342Mistral'] = true,
+    ['SA342L'] = true,
+    ['SA342M'] = true,
+    ['SA342Minigun'] = true,
+    ['UH-60L'] = true,
+    ['UH-60L_DAP'] = true,
+    ['AH-64D_BLK_II'] = true,
+    ['UH-1H'] = true,
+    ['Mi-8MT'] = true,
+    ['Hercules'] = false,
+    ['OH58D'] = true,
+    ['CH-47Fbl1'] = true,
+    ['Bronco-OV-10A'] = true,
+    ['OH-6A'] = true,
+    ['C-130J-30'] = false,
+    ['MH-6J'] = true,
+    ['AH-6J'] = true,
+}
+
 	LogisticCommander.doubleSupplyTypes = {}
 	LogisticCommander.doubleSupplyTypes['CH-47Fbl1'] = true
 	LogisticCommander.doubleSupplyTypes['Hercules'] = true
@@ -14678,6 +14745,7 @@ do
 	function LogisticCommander:new(obj)
 		obj = obj or {}
 		obj.groupMenus = {} -- groupid = path
+		obj.csarGroupMenus = {}
 		obj.groupIdToName = {}
 		obj.statsMenus = {}
 		obj.carriedCargo = {} -- groupid = source
@@ -15072,10 +15140,10 @@ end
 					trigger.action.outTextForGroup(groupid,"No one onboard",15)
 					return
 				end
-				if Utils.isInAir(un) then
+--[[ 				if Utils.isInAir(un) then
 					trigger.action.outTextForGroup(groupid,"Can not drop off pilots while in air",15)
 					return
-				end
+				end ]]
 				local playerName=un:getPlayerName()
 					local count=self.carriedPilots[groupid] or 0
 					trigger.action.outTextForGroup(groupid,"Pilots dropped off",15)
@@ -15196,17 +15264,34 @@ end
 	
 	function LogisticCommander:printPilotInfo(pilotObj,groupid,referenceUnit,duration,short)
 		self.csarBeaconFreq = self.csarBeaconFreq or {}
+		self.csarPilotDataByObject = self.csarPilotDataByObject or {}
 		if not pilotObj or not pilotObj:isExist() then return end
 		local pnt=pilotObj:getPoint() or nil
 		if not pnt then return end
 		local objectID=pilotObj:getObjectID()
-		local pilotData=landedPilotOwners[objectID] or ejectedPilotOwners[objectID]
+		local pilotData=landedPilotOwners[objectID] or self.csarPilotDataByObject[objectID] or ejectedPilotOwners[objectID]
 		local freq=self.csarBeaconFreq[objectID]
 		local c=COORDINATE:NewFromVec3(pnt)
 
-		if short then
+			if short then
 			local pilotName = (pilotData and pilotData.player and pilotData.player~='') and ('['..pilotData.player..']') or 'Downed pilot'
-			local toprint=pilotName..'  I hear you! Request smoke if needed.'
+			local plural = false
+			if self.ejectedPilots then
+				for _, other in ipairs(self.ejectedPilots) do
+					if other and other:isExist() and other ~= pilotObj then
+						local op = other:getPoint()
+						if op then
+							local dx = op.x - pnt.x
+							local dz = op.z - pnt.z
+							if (dx*dx + dz*dz) <= (92*92) then
+								plural = true
+								break
+							end
+						end
+					end
+				end
+			end
+			local toprint=pilotName..(plural and '  We hear you! Request smoke if needed.' or '  I hear you! Request smoke if needed.')
 			if freq and freq>0 then
 				toprint = toprint .. '\n\nADF: ' .. string.format('%.0f',freq/1000) .. ' kHz'
 			end
@@ -15221,6 +15306,7 @@ end
 			trigger.action.outTextForGroup(groupid,toprint,duration)
 			return
 		end
+
 
 		local toprint='Pilot in need of extraction:'
 		if (pilotData and pilotData.player) then		
@@ -15256,6 +15342,9 @@ end
 		self.csarBeaconName = self.csarBeaconName or {}
 		self.csarBeaconFreq = self.csarBeaconFreq or {}
 		self.csarBeaconNext = self.csarBeaconNext or {}
+		self.csarAssignedGroup = self.csarAssignedGroup or {}
+		self.csarRouteIssued = self.csarRouteIssued or {}
+		self.csarPilotDataByObject = self.csarPilotDataByObject or {}
 		local tocleanup = {}
 		self.ejectedPilotsState = self.ejectedPilotsState or {}
 		for i = #self.ejectedPilotsState, 1, -1 do
@@ -15268,14 +15357,6 @@ end
 				if v.getLife and v:getLife() <= 0 then
 					table.insert(tocleanup, { index = i, kia = true })
 					keep = false
-				else
-					for _, v2 in ipairs(self.battleCommander.zones) do
-						if v2.active and v2.side ~= 0 and Utils.isInZone(v, v2.zone) then
-							table.insert(tocleanup, { index = i, zoneside = v2.side, zonename = v2.zone })
-							keep = false
-							break
-						end
-					end
 				end
 				if keep then
 					local ejectedPilotTable = {
@@ -15283,7 +15364,7 @@ end
 						lostCredits = 0
 					}
 					local objectID = v:getObjectID()
-					local pilotData = (landedPilotOwners and landedPilotOwners[objectID]) or (ejectedPilotOwners and ejectedPilotOwners[objectID])
+					local pilotData = (landedPilotOwners and landedPilotOwners[objectID]) or self.csarPilotDataByObject[objectID] or (ejectedPilotOwners and ejectedPilotOwners[objectID])
 					if pilotData then
 						ejectedPilotTable.playerName = pilotData.player or "Unknown"
 						ejectedPilotTable.lostCredits = pilotData.lostCredits or 0
@@ -15301,7 +15382,7 @@ end
 
 		local function boardPilot(pilotObj, heliUnit, groupid)
 			local pid = pilotObj:getObjectID()
-			local pilotData = landedPilotOwners[pid] or ejectedPilotOwners[pid]
+			local pilotData = landedPilotOwners[pid] or self.csarPilotDataByObject[pid] or ejectedPilotOwners[pid]
 			local current = self.carriedPilots[groupid] or 0
 			if current >= (LogisticCommander.maxCarriedPilots or 6) then
 				trigger.action.outTextForGroup(groupid, "At max capacity", 8)
@@ -15311,6 +15392,7 @@ end
 			self.carriedPilotData[groupid] = self.carriedPilotData[groupid] or {}
 			if pilotData then table.insert(self.carriedPilotData[groupid], pilotData) end
 			landedPilotOwners[pid] = nil
+			self.csarPilotDataByObject[pid] = nil
 			ejectedPilotOwners[pid] = nil
 			self.csarNextTick[pid] = nil
 			local playerName = heliUnit:getPlayerName()
@@ -15339,9 +15421,13 @@ end
 			end
 			pilotObj:destroy()
 			trigger.action.outTextForGroup(groupid, "Pilot onboard ["..self.carriedPilots[groupid].."/"..(LogisticCommander.maxCarriedPilots or 6).."]", 10)
+			self.csarAssignedGroup[pid] = nil
+			self.csarRouteIssued[pid] = nil
 			self.csarVisibleMsg[pid] = nil
 			self.csarCloseMsg[pid] = nil
 			self.csarRunEta[pid] = nil
+
+
 		end
 
 		local function refreshPilotBeacon(pid, pilotObj)
@@ -15380,12 +15466,27 @@ end
 				self.csarVisibleMsg[pid] = shown
 			end
 			if not shown[gid] then
+				self.csarApproachClusterMsg = self.csarApproachClusterMsg or {}
+				local now = timer.getTime()
+				local p = pilotObj:getPoint()
+				local cluster = self.csarApproachClusterMsg[gid]
+				if cluster and (now - cluster.t) < 20 and p then
+					local dx = p.x - cluster.x
+					local dz = p.z - cluster.z
+					if (dx*dx + dz*dz) <= (92*92) then
+						shown[gid] = true
+						return
+					end
+				end
+				if p then
+					self.csarApproachClusterMsg[gid] = { t = now, x = p.x, z = p.z }
+				end
 				self:printPilotInfo(pilotObj, gid, heliUnit, 15, true)
 				shown[gid] = true
 			end
 		end
 
-		local function closeMessage(pid, heliUnit)
+		local function closeMessage(pid, heliUnit, pilotObj)
 			local gid = heliUnit:getGroup():getID()
 			local shown = self.csarCloseMsg[pid]
 			if not shown then
@@ -15393,7 +15494,22 @@ end
 				self.csarCloseMsg[pid] = shown
 			end
 			if not shown[gid] then
-				trigger.action.outTextForGroup(gid, "You're close now! Land in a safe place, I will go there.", 10)
+				self.csarCloseClusterMsg = self.csarCloseClusterMsg or {}
+				local now = timer.getTime()
+				local p = pilotObj:getPoint()
+				local cluster = self.csarCloseClusterMsg[gid]
+				if cluster and (now - cluster.t) < 20 and p then
+					local dx = p.x - cluster.x
+					local dz = p.z - cluster.z
+					if (dx*dx + dz*dz) <= (92*92) then
+						shown[gid] = true
+						return
+					end
+				end
+				if p then
+					self.csarCloseClusterMsg[gid] = { t = now, x = p.x, z = p.z }
+				end
+				trigger.action.outTextForGroup(gid, "You're close now! Land in a safe place, we will come to you.", 10)
 				shown[gid] = true
 			end
 		end
@@ -15416,7 +15532,7 @@ end
 					if not g then return end
 					local gid = g:getID()
 					if seen[gid] then return end
-					if not self.allowedTypes[un:getTypeName()] then return end
+					if not self.csarGroupMenus[gid] then return end
 					seen[gid] = true
 					candidates[#candidates+1] = { unit = un, groupid = gid }
 				end
@@ -15451,55 +15567,84 @@ end
 				end
 			end
 
+				local assignedGroupid = self.csarAssignedGroup[pid]
+				if assignedGroupid then
+					local assignedFound = false
+					for _, entry in ipairs(candidates) do
+						if entry.groupid == assignedGroupid then
+							assignedFound = true
+							break
+						end
+					end
+					if not assignedFound then
+						self.csarAssignedGroup[pid] = nil
+						assignedGroupid = nil
+					end
+				end
 				local anyNear = false
 				for _, entry in ipairs(candidates) do
 					local un = entry.unit
 					local groupid = entry.groupid
-					local dist = UTILS.VecDist3D(un:getPoint(), pilotPoint)
-					local skip = false
-					if dist < self.csarApproachNear then
-						anyNear = true
-					end
-					if dist >= self.csarApproachNear then
-						local nextAllowed = self.csarNextTick[pid] or 0
-						if now < nextAllowed then
-							skip = true
-						end
-					end
-					if not skip then
-						if dist < self.csarApproachNear then
-							approachMessage(pid, un, pilotObj)
-						end
-						if dist < 600 then
-							closeMessage(pid, un)
-						end
-						if not Utils.isInAir(un) and dist < self.csarExtractDistance then
-							local runEta = self.csarRunEta[pid]
-							if not runEta then
-								runEta = {}
-								self.csarRunEta[pid] = runEta
-							end
-							if not runEta[groupid] then
-								local pilotData = landedPilotOwners[pid] or ejectedPilotOwners[pid]
-								local pilotName = (pilotData and pilotData.player and pilotData.player~='') and pilotData.player or "Downed pilot"
-								local eta = math.floor((dist - self.csarLoadDistance) / 3.6)
-								if eta < 0 then eta = 0 end
-								runEta[groupid] = eta
-								trigger.action.outTextForGroup(groupid, pilotName..": I\'m coming to you.\nETA "..eta.." seconds.", 10)
-							end
-							runPilotToHelo(pilotObj, un)
+					if not assignedGroupid or groupid == assignedGroupid then
+						local dist = UTILS.VecDist3D(un:getPoint(), pilotPoint)
+
+						if assignedGroupid and (Utils.isInAir(un) or dist > self.csarExtractDistance) then
+							self.csarAssignedGroup[pid] = nil
+							self.csarRouteIssued[pid] = nil
+							assignedGroupid = nil
 						end
 
-						if dist < self.csarLoadDistance then
-							boardPilot(pilotObj, un, groupid)
-							self.csarNextTick[pid] = nil
-							table.remove(self.ejectedPilots, i)
-							return
+						local skip = false
+						if dist < self.csarApproachNear then
+							anyNear = true
 						end
 						if dist >= self.csarApproachNear then
-							self.csarNextTick[pid] = now + 10
-						else
-							self.csarNextTick[pid] = now + 5
+							local nextAllowed = self.csarNextTick[pid] or 0
+							if now < nextAllowed then
+								skip = true
+							end
+						end
+						if not skip then
+							if dist < self.csarApproachNear then
+								approachMessage(pid, un, pilotObj)
+							end							
+							if dist < 600 then
+								closeMessage(pid, un, pilotObj)
+							end
+							if not Utils.isInAir(un) and dist < self.csarExtractDistance then
+								if not assignedGroupid then
+									self.csarAssignedGroup[pid] = groupid
+									assignedGroupid = groupid
+								end
+								local runEta = self.csarRunEta[pid]
+								if not runEta then
+									runEta = {}
+									self.csarRunEta[pid] = runEta
+								end
+								if not runEta[groupid] then
+									local pilotData = landedPilotOwners[pid] or self.csarPilotDataByObject[pid] or ejectedPilotOwners[pid]
+									local pilotName = (pilotData and pilotData.player and pilotData.player~='') and pilotData.player or "Downed pilot"
+									local eta = math.floor((dist - self.csarLoadDistance) / 3.6)
+									if eta < 0 then eta = 0 end
+									runEta[groupid] = eta
+									trigger.action.outTextForGroup(groupid, pilotName..": I\'m coming to you.\nETA "..eta.." seconds.", 10)
+								end
+								if self.csarRouteIssued[pid] ~= groupid then
+									self.csarRouteIssued[pid] = groupid
+									runPilotToHelo(pilotObj, un)
+								end
+							end
+							if dist < self.csarLoadDistance then
+								boardPilot(pilotObj, un, groupid)
+								self.csarNextTick[pid] = nil
+								table.remove(self.ejectedPilots, i)
+								return
+							end
+							if dist >= self.csarApproachNear then
+								self.csarNextTick[pid] = now + 10
+							else
+								self.csarNextTick[pid] = now + 5
+							end
 						end
 					end
 				end
@@ -15518,7 +15663,7 @@ end
 
 			if entry.kia then
 				local pid = pilot and pilot:isExist() and pilot:getObjectID() or nil
-				local pilotData = pid and (landedPilotOwners[pid] or ejectedPilotOwners[pid]) or nil
+				local pilotData = pid and (landedPilotOwners[pid] or self.csarPilotDataByObject[pid] or ejectedPilotOwners[pid]) or nil
 				local pname = pilotData and pilotData.player
 				local coal = pilotData and pilotData.coalition or 2
 				local msg
@@ -15527,12 +15672,15 @@ end
 				else
 					msg = "Downed pilot is KIA."
 				end
-				for groupid in pairs(self.groupMenus) do
+				for groupid in pairs(self.csarGroupMenus) do
 					trigger.action.outTextForGroup(groupid,msg,10)
 				end
 				if pid then
 					landedPilotOwners[pid]=nil
+					self.csarPilotDataByObject[pid]=nil
 					ejectedPilotOwners[pid]=nil
+					self.csarAssignedGroup[pid]=nil
+					self.csarRouteIssued[pid]=nil
 					self.csarNextTick[pid]=nil
 					self.csarVisibleMsg[pid]=nil
 					self.csarCloseMsg[pid]=nil
@@ -15547,37 +15695,7 @@ end
 				if pilot and pilot:isExist() then
 					pilot:destroy()
 				end
-			elseif pilot and pilot:isExist() then
-				if entry.zoneside then
-					local pid = pilot:getObjectID()
-					local pilotData = landedPilotOwners[pid] or ejectedPilotOwners[pid]
-					local pname = pilotData and pilotData.player
-					if pname and pname~='' then
-						if pilotData.coalition and entry.zoneside ~= pilotData.coalition then
-							self.battleCommander:addStat(pname,'Captured by enemy',1)
-							trigger.action.outTextForCoalition(2,"["..pname.."] has been captured by enemy forces in "..entry.zonename..". Assumed dead.",10)
-						else
-							self.battleCommander:addStat(pname,'Deaths',-1)
-							env.info('LogisticCommander:update - Pilot '..pname..' rescued in zone '..entry.zonename)
-							trigger.action.outTextForCoalition(2,"["..pname.."] landed safely in "..entry.zonename..".",10)
-						end
-					end
-					landedPilotOwners[pid]=nil
-					ejectedPilotOwners[pid]=nil
-					self.csarNextTick[pid]=nil
-					self.csarVisibleMsg[pid]=nil
-					self.csarCloseMsg[pid]=nil
-					self.csarRunEta[pid]=nil
-					self.csarSmokeTick[pid]=nil
-					local bname = self.csarBeaconName[pid]
-					if bname then trigger.action.stopRadioTransmission(bname) end
-					self.csarBeaconName[pid]=nil
-					self.csarBeaconFreq[pid]=nil
-					self.csarBeaconNext[pid]=nil
-				end
-				pilot:destroy()
 			end
-
 			table.remove(self.ejectedPilots, index)
 		end
 	end
@@ -15727,10 +15845,11 @@ function LogisticCommander:init()
 				printMissionMenus = printMissionMenus or {}
 			if not printMissionMenus[groupid] then
 				printMissionMenus[groupid] = missionCommands.addCommandForGroup(groupid, 'Missions', missionsRoot, mc.printMissions, mc, groupid)
-
+				
+				local playerCoalition = event.initiator:getCoalition()
 				SCHEDULER:New(nil, function()
 				local jm = missionCommands.addSubMenuForGroup(groupid, 'Joint missions', missionsRoot)
-				missionCommands.addCommandForGroup(groupid, 'Invite to joint mission', jm, self.context.battleCommander._jointGenCode, self.context.battleCommander, groupid, event.initiator:getCoalition())
+				missionCommands.addCommandForGroup(groupid, 'Invite to joint mission', jm, self.context.battleCommander._jointGenCode, self.context.battleCommander, groupid, playerCoalition)
 				local dial = missionCommands.addSubMenuForGroup(groupid, 'Join another player', jm)
 				for d1=1,9,1 do
 					local m1 = missionCommands.addSubMenuForGroup(groupid, tostring(d1)..'___', dial)
@@ -15740,7 +15859,7 @@ function LogisticCommander:init()
 							local m3 = missionCommands.addSubMenuForGroup(groupid, tostring(d1)..tostring(d2)..tostring(d3)..'_', m2)
 							for d4=0,9,1 do
 								local code = tonumber(tostring(d1)..tostring(d2)..tostring(d3)..tostring(d4))
-								missionCommands.addCommandForGroup(groupid, 'code '..tostring(code), m3, self.context.battleCommander._jointAcceptCode, self.context.battleCommander, groupid, code, event.initiator:getCoalition())
+								missionCommands.addCommandForGroup(groupid, 'code '..tostring(code), m3, self.context.battleCommander._jointAcceptCode, self.context.battleCommander, groupid, code, playerCoalition)
 							end
 						end
 					end
@@ -15786,7 +15905,21 @@ function LogisticCommander:init()
 							missionCommands.removeItemForGroup(groupid, self.context.groupMenus[groupid])
 						end
 							self.context.groupMenus[groupid] = nil
-
+					if LogisticCommander.AllowedCsar and LogisticCommander.AllowedCsar[unitType] then
+						self.context.csarGroupMenus[groupid] = true
+						local csar = missionCommands.addSubMenuForGroup(groupid, 'CSAR')
+						missionCommands.addCommandForGroup(groupid, 'Info on closest pilot', csar, self.context.infoPilot, self.context, groupname)
+						missionCommands.addCommandForGroup(groupid, 'Deploy smoke at closest pilot', csar, self.context.markPilot, self.context, groupname)
+						missionCommands.addCommandForGroup(groupid, 'Deploy flare at closest pilot', csar, self.context.flarePilot, self.context, groupname)
+						missionCommands.addCommandForGroup(groupid, 'Smoke nearest zone', csar, function() Foothold_ctld:SmokeZoneNearBy(GROUP:FindByName(groupname):GetUnit(1), false) end)
+						missionCommands.addCommandForGroup(groupid, 'Flare nearest zone', csar, function() Foothold_ctld:SmokeZoneNearBy(GROUP:FindByName(groupname):GetUnit(1), true) end)
+						--missionCommands.addCommandForGroup(groupid, 'Pick up pilot', csar, self.context.loadPilot, self.context, groupname)
+						--missionCommands.addCommandForGroup(groupid, 'Drop off pilot', csar, self.context.unloadPilot, self.context, groupname)
+						--missionCommands.addCommandForGroup(groupid, 'Info on closest pilot with credits', csar, self.context.infoHumanPilot, self.context, groupname)
+					else
+						self.context.csarGroupMenus[groupid] = nil
+					end
+					SCHEDULER:New(nil, function()
 						local cargomenuObj = nil
 						local mooseGroup = GROUP and GROUP:FindByName(groupname) or nil
 						if mooseGroup and MENU_GROUP and MENU_GROUP.New then
@@ -15806,6 +15939,25 @@ function LogisticCommander:init()
                         -- duplicate CTLD static cargo menus under Logistics
 
 						if Foothold_ctld and Foothold_ctld.Cargo_Statics and WarehouseLogistics == true then
+							missionCommands.addCommandForGroup(groupid, 'Supplies help', cargomenu, function()
+								local txt = 'Logistics overview\n\n'
+									.. 'Zone supplies (Upgrades + initial stock)\n'
+									.. '• Use "Zone supplies" to pick up supply crates.\n'
+									.. '• Load/unload using Ground Crew.\n'
+									.. '• 1 crate = 1 zone upgrade.\n'
+									.. '• Crates are very heavy. Carry multiple only if your aircraft allows it.\n'
+									.. '• You can slingload, or combine 1 internal + 1 slingload.\n'
+									.. '• Each crate delivers 10 of every warehouse item (bombs, missiles, guided bombs, rockets, A/G missiles, etc).\n\n'
+									.. 'Warehouse supplies (Extra weapons)\n'
+									.. '• Use "Warehouse supplies" to deliver larger weapon quantities.\n'
+									.. '• Warehouse supplies do not capture zones.\n\n'
+									.. 'Capturing with troops\n'
+									.. '• CTLD troops can capture/upgrade zones.\n'
+									.. '• 1 troop group = 1 upgrade.\n'
+									.. '• If a zone is already fully upgraded, extra troops are refunded.'
+								trigger.action.outTextForGroup(groupid, txt, 45)
+							end)
+						
 							self.context.staticMenus = self.context.staticMenus or {}
 							self.context.staticMenus[groupid] = self.context.staticMenus[groupid] or {}
 							local staticMenuPages = {}
@@ -15893,6 +16045,7 @@ function LogisticCommander:init()
 									addStaticCommand(cargoObj)
 								end
 							end
+							
                         end
 						local main = missionCommands.addSubMenuForGroup(groupid, 'Mark Zone', cargomenu)
 						local sub1
@@ -15909,16 +16062,7 @@ function LogisticCommander:init()
 								missionCommands.addCommandForGroup(groupid, v.zone, sub1, v.markWithSmoke, v, event.initiator:getCoalition())
 							end
 						end
-						local csar = missionCommands.addSubMenuForGroup(groupid, 'CSAR', cargomenu)
-						missionCommands.addCommandForGroup(groupid, 'Info on closest pilot', csar, self.context.infoPilot, self.context, groupname)
-						missionCommands.addCommandForGroup(groupid, 'Deploy smoke at closest pilot', csar, self.context.markPilot, self.context, groupname)
-						missionCommands.addCommandForGroup(groupid, 'Deploy flare at closest pilot', csar, self.context.flarePilot, self.context, groupname)
-						missionCommands.addCommandForGroup(groupid, 'Smoke nearest zone', csar, function() Foothold_ctld:SmokeZoneNearBy(GROUP:FindByName(groupname):GetUnit(1), false) end)
-						missionCommands.addCommandForGroup(groupid, 'Flare nearest zone', csar, function() Foothold_ctld:SmokeZoneNearBy(GROUP:FindByName(groupname):GetUnit(1), true) end)
-						--missionCommands.addCommandForGroup(groupid, 'Pick up pilot', csar, self.context.loadPilot, self.context, groupname)
-						--missionCommands.addCommandForGroup(groupid, 'Drop off pilot', csar, self.context.unloadPilot, self.context, groupname)
-						--missionCommands.addCommandForGroup(groupid, 'Info on closest pilot with credits', csar, self.context.infoHumanPilot, self.context, groupname)
-
+						
 						self.context.groupMenus[groupid] = cargomenu
 						self.context.groupIdToName[groupid] = groupname
 						self.context.csarGroups[groupid] = { name = groupname, player = player }
@@ -15927,7 +16071,8 @@ function LogisticCommander:init()
 							if mg then self.context.csarSet:AddGroup(mg) end
 						end
 						self.context.carriedCargo[groupid] = nil
-					end
+					end, {}, 0.5)
+				  end
 				end
 				local unitNameForMoose = un:getName()
 				local zoneNameForMoose = zn and zn.zone or nil
@@ -16003,16 +16148,25 @@ function LogisticCommander:init()
 			local aircraftID=event.place and event.place.id_
 			local coalitionSide = event.initiator:getCoalition()
 			local pilotObjectID=event.initiator and event.initiator:getObjectID()
-			local pilotData=ejectedPilotOwners[aircraftID]
+			ejectedPilotOwnersByAircraft = ejectedPilotOwnersByAircraft or {}
+			local list = aircraftID and ejectedPilotOwnersByAircraft[aircraftID]
+			local pilotData = list and table.remove(list,1) or nil
+			if list and #list == 0 then ejectedPilotOwnersByAircraft[aircraftID] = nil end
+
+			self.context.csarPilotProcessedByAircraft = self.context.csarPilotProcessedByAircraft or {}
+			local processed = aircraftID and (self.context.csarPilotProcessedByAircraft[aircraftID] or 0) or 0
+			if pilotData then
+				processed = processed + 1
+				if aircraftID then self.context.csarPilotProcessedByAircraft[aircraftID] = processed end
+			end
+
 			
-			local function pointInActiveZone(pt)
-				if not pt then return nil end
+			local function pointInActiveZone(obj)
+				if not obj then return nil end
 				local bc = self.context and self.context.battleCommander
-				if not bc or not bc.zones then return nil end
 				for _, z in ipairs(bc.zones) do
 					if z.active and z.side and z.side ~= 0 and z.zone then
-						local cz = CustomZone:getByName(z.zone)
-						if cz and cz:isInside(pt) then
+						if Utils.isInZone(obj, z.zone) then
 							return z.side, z.zone
 						end
 					end
@@ -16025,8 +16179,7 @@ function LogisticCommander:init()
 				return
 			end
 
-			local landingPt = event.initiator and event.initiator:getPoint()
-			local zoneSide, zoneName = pointInActiveZone(landingPt)
+			local zoneSide, zoneName = pointInActiveZone(event.initiator)
 			if zoneSide then
 				if pilotData and pilotData.player and pilotData.player ~= '' then
 					if pilotData.coalition and zoneSide ~= pilotData.coalition then
@@ -16038,8 +16191,18 @@ function LogisticCommander:init()
 					end
 				end
 				landedPilotOwners[pilotObjectID]=nil
-				ejectedPilotOwners[aircraftID]=nil
 				event.initiator:destroy()
+				return
+			end
+
+			self.context.csarPilotByAircraft = self.context.csarPilotByAircraft or {}
+			local existingPilot = aircraftID and self.context.csarPilotByAircraft[aircraftID]
+			local isPlayerAircraft = aircraftID and self.context.csarPlayerAircraftByAircraft and self.context.csarPlayerAircraftByAircraft[aircraftID]
+			if not pilotData and not isPlayerAircraft and existingPilot and existingPilot:isExist() then
+				landedPilotOwners[pilotObjectID]=nil
+				if event.initiator and event.initiator:isExist() then
+					event.initiator:destroy()
+				end
 				return
 			end
 
@@ -16049,31 +16212,42 @@ function LogisticCommander:init()
 				if not coord then return nil end
 				local spawnCoord = COORDINATE:NewFromVec3(coord)
 				if not spawnCoord then return nil end
-				local sp = SPAWN:New(templateName)
+				local alias = "FOOTHOLD_CSAR_"..tostring(aircraftID or math.random(1000,9999)).."_"..tostring(pilotObjectID or math.random(1000,9999))
+				local sp = SPAWN:NewWithAlias(templateName, alias)
 				if sp.InitCoalition then
 					sp = sp:InitCoalition(coalitionSide)
 				end
 				local spawned = sp:SpawnFromPointVec3(spawnCoord)
 				if not spawned then return nil end
 				local unitWrapper = spawned:GetUnit(1)
-				return unitWrapper and unitWrapper:GetDCSObject() or nil
+				env.info('[FOOTHOLD CSAR] Spawned downed pilot '..alias or nil)
+				return unitWrapper and unitWrapper:GetDCSObject() or nil	
 			end
 
 			local newPilotObj = spawnDownedPilot()
 			local pilotObj = newPilotObj or event.initiator
 			local newObjectID = pilotObj and pilotObj:getObjectID()
 			if pilotData then
+				self.csarPilotDataByObject = self.csarPilotDataByObject or {}
 				if pilotObjectID then
 					landedPilotOwners[pilotObjectID] = pilotData
+					self.csarPilotDataByObject[pilotObjectID] = pilotData
 				end
 				if newObjectID and newObjectID ~= pilotObjectID then
 					landedPilotOwners[newObjectID] = pilotData
+					self.csarPilotDataByObject[newObjectID] = pilotData
 				end
-				ejectedPilotOwners[aircraftID] = nil
+			end
+
+
+			if aircraftID and not pilotData then
+				self.context.csarPilotByAircraft[aircraftID] = pilotObj
+				processed = processed + 1
+				self.context.csarPilotProcessedByAircraft[aircraftID] = processed
 			end
 
 			table.insert(self.context.ejectedPilots,pilotObj)
-			for i in pairs(self.context.groupMenus) do
+			for i in pairs(self.context.csarGroupMenus) do
 				local groupid=i
 				SCHEDULER:New(nil,function()
 					if pilotObj and pilotObj:isExist() then
@@ -16081,13 +16255,14 @@ function LogisticCommander:init()
 					end
 				end,{},15,0)
 			end
+
 			if newPilotObj and event.initiator and event.initiator:isExist() then
 				event.initiator:destroy()
 			end
 		end
     end
     world.addEventHandler(ev)
-	SCHEDULER:New(nil,self.update,{self},5,5)
+	SCHEDULER:New(nil,self.update,{self},10,10)
 end
 
 
@@ -17165,7 +17340,11 @@ function FarpHere(Coordinate, customName)
   local FName="CTLD Farp "..baseLabel
   FARPFreq=FARPFreq+1
   ZONE_RADIUS:New(FName,Coordinate:GetVec2(),120,false)
-  UTILS.SpawnFARPAndFunctionalStatics(FName,Coordinate,ENUMS.FARPType.INVISIBLE,Foothold_ctld.coalition,country.id.USA,MapFARPCount,FARPFreq,radio.modulation.AM,nil,nil,nil,10000,0,0,nil,true,true,3,80,80)
+ if Era=="Coldwar" then
+ 	UTILS.SpawnFARPAndFunctionalStatics(FName,Coordinate,ENUMS.FARPType.INVISIBLE,Foothold_ctld.coalition,country.id.USA,MapFARPCount,FARPFreq,radio.modulation.AM,nil,nil,nil,10000,0,0,nil,true,true,3,80,80)
+else
+  	UTILS.SpawnFARPAndFunctionalStatics(FName,Coordinate,ENUMS.FARPType.INVISIBLE,Foothold_ctld.coalition,country.id.USA,MapFARPCount,FARPFreq,radio.modulation.AM,nil,nil,nil,10000, 0,1073741823,nil,true,true,3,80,80)
+end
   Foothold_ctld:AddCTLDZone(FName,CTLD.CargoZoneType.LOAD,SMOKECOLOR.Blue,true,false)
   MESSAGE:New(string.format("%s in operation!",FName),15):ToBlue()
  
@@ -17192,7 +17371,12 @@ function CustomBuildAFARP(Coordinate,startZone)
   FARPFreq=FARPFreq+1
   escortFarpToZone[FName]=startZone
   ZONE_RADIUS:New(FName,Coordinate:GetVec2(),120,false)
+  if Era=="Coldwar" then
   UTILS.SpawnFARPAndFunctionalStatics(FName,Coordinate,ENUMS.FARPType.INVISIBLE,Foothold_ctld.coalition,country.id.USA,EscortFARPCount,FARPFreq,radio.modulation.AM,nil,nil,nil,5000,0,0,nil,true,true, 3, 80, 80)
+  else
+  UTILS.SpawnFARPAndFunctionalStatics(FName,Coordinate,ENUMS.FARPType.INVISIBLE,Foothold_ctld.coalition,country.id.USA,EscortFARPCount,FARPFreq,radio.modulation.AM,nil,nil,nil,10000, 0,1073741823,nil,true,true, 3, 80, 80)
+  end
+ 
   Foothold_ctld:AddCTLDZone(FName,CTLD.CargoZoneType.LOAD,SMOKECOLOR.Blue,true,false)
   MESSAGE:New(string.format("%s in operation!",FName),15):ToBlue()
 
@@ -19058,41 +19242,54 @@ do
 		for _, ab in ipairs(airbases) do
 			local st = STORAGE:FindByName(ab)
 			if st and st.GetInventory then
+				local sumQty, countQty, nonZeroEntries, hasUnlimited = 0, 0, 0, false
 				local _, _, wp = st:GetInventory()
 				if type(wp) == 'table' then
 					for item, qty in pairs(wp) do
 						qty = tonumber(qty) or 0
+						if qty < 0 then
+							hasUnlimited = true
+						else
+							if qty > 0 then
+								sumQty = sumQty + qty
+								countQty = countQty + 1
+							end
+						end
 						if qty ~= 0 then
+							nonZeroEntries = nonZeroEntries + 1
 							out[#out + 1] = string.format('%s;W;%s;%d', ab, tostring(item), qty)
 						end
 					end
 				end
-				local sum, count, hasUnlimited = 0, 0, false
 				if st.GetItemAmount then
 					for i = 1, #wsItems do
 						local w = wsItems[i]
 						local qty = tonumber(st:GetItemAmount(w)) or 0
 						if qty < 0 then
 							hasUnlimited = true
-						elseif qty > 0 then
-							sum = sum + qty
-							count = count + 1
+						else
+							if qty > 0 then
+								sumQty = sumQty + qty
+								countQty = countQty + 1
+							end
 						end
 						if qty ~= 0 then
+							nonZeroEntries = nonZeroEntries + 1
 							out[#out + 1] = string.format('%s;W;{%d,%d,%d,%d};%d', ab, tonumber(w[1]) or 0, tonumber(w[2]) or 0, tonumber(w[3]) or 0, tonumber(w[4]) or 0, qty)
 						end
 					end
 				end
 				local zoneName = zoneByAirbase[ab]
 				if zoneName and not hasUnlimited then
-					local avg = (count > 0) and (sum / count) or 0
-					if avg < 50 then
-						lowAvg[zoneName] = avg
+					local avg = (countQty > 0) and (sumQty / countQty) or 0
+					if nonZeroEntries < 500 or avg < 50 then
+						lowAvg[zoneName] = { avg = avg, entries = nonZeroEntries }
 					end
 				end
 				saved = saved + 1
 			end
 		end
+
 		local ok = UTILS.SaveToFile(path, filename, table.concat(out, '\n') .. '\n')
 		if ok then env.info(string.format('[WarehousePersistence] Saved %d storages to %s\\%s', saved, tostring(path), tostring(filename))) end
 
@@ -19354,6 +19551,7 @@ WEAPONSLIST.Items = {
 [WEAPONSLIST.ItemCategory.AG_MISSILES] = {
     -- AG MISSILES
         'weapons.missiles.TGM_65G',
+        'weapons.missiles.HB_AGM_78',
         'weapons.missiles.TGM_65G',
         'weapons.missiles.TGM_65D',
         'weapons.missiles.CATM_65K',
@@ -19668,6 +19866,9 @@ WEAPONSLIST.Items = {
         'weapons.bombs.MK_82SNAKEYE',
         'weapons.bombs.FAB_1500',
         'weapons.bombs.AN_M64',
+		'weapons.bombs.BKF_PTAB2_5KO',
+
+		'weapons.bombs.BKF_AO2_5RT',
     },
 
 [WEAPONSLIST.ItemCategory.AG_GUIDED_BOMBS] = {
@@ -19678,6 +19879,7 @@ WEAPONSLIST.Items = {
         'weapons.bombs.KAB_1500T',
         'weapons.bombs.KAB_1500LG',
         'weapons.bombs.KAB_500S',
+		'weapons.bombs.KAB_500KrOD',
         'weapons.bombs.GBU_31_V_2B',
         'weapons.bombs.GBU_31_V_4B',
         'weapons.bombs.GBU_32_V_2B',
@@ -19780,6 +19982,7 @@ WEAPONSLIST.Items = {
 
 [WEAPONSLIST.ItemCategory.MISC] = {
     -- MISC (ADAPTERS / PODS / GUNMOUNTS / OTHER)
+		
         'weapons.containers.AAQ-28_LITENING',
         'weapons.containers.MB339_Vinten',
         'weapons.containers.F-15E_AAQ-13_LANTIRN',
@@ -19838,7 +20041,10 @@ WEAPONSLIST.Items = {
         'weapons.containers.ais-pod-t50_r',
         'weapons.containers.sa342_dipole_antenna',
         'weapons.containers.MB339_TravelPod',
+		'weapons.adapters.MBD-3-LAU-61',
         'weapons.adapters.lau-88',
+		'weapons.adapters.MBD-3-LAU-68',
+		'weapons.containers.SPRD_99Twin',
         'weapons.containers.FAS',
         'weapons.containers.IRDeflector',
         'weapons.containers.{EclairM_60}',
@@ -20283,45 +20489,88 @@ WEAPONSLIST.Items = {
 		'weapons.gunmounts.B17_Left_Nose_M2',
 		'weapons.gunmounts.Ju88_Turret_Top_Left_MG_81',
 		'weapons.gunmounts.B17_TopTurret_M2_L',
-		--{4,15,46,2492},
-		--{4,15,46,2491},
-		--{4,15,46,2490},	
-		--{4,15,46,2489},
-		--{4,15,46,2488},
-		--{4,15,46,2493},
-		--{4,15,46,2494},
-		--{4,15,46,2495},
-		--{4,15,46,20},
-		--{4,5,32,95},
-		--{4,5,32,94},
-		--{4,15,46,2611},
-		--{4,15,46,2610},
-		--{4,15,46,2609},
-		--{4,15,46,2608},
-		--{4,15,46,2607},
-		--{4,15,46,18},
-		--{4,15,46,183},
-		--{4,15,46,1771},
-		--{4,15,46,1294},
-		--{4,15,46,1295},
-		--{4,15,46,1770},
-		--{4,15,46,1769},
-		--{4,15,46,1768},
-		--{4,15,46,1767},
-		--{4,15,46,1766},
-		--{4,15,46,1765},
-		--{4,15,46,1764},
-		--{4,15,46,1057},
-		--{4,15,46,160},
-		--{4,15,46,161},
-		--{4,15,46,170},
-		--{4,15,46,171},
-		--{4,15,46,174},
-		--{4,15,46,175},
-		--{4,15,46,176},
-		--{4,15,46,177},
-		--{4,15,46,184},
-		{4,8,11,347},
+		'weapons.adapters.B-8V20A',
+		'weapons.torpedoes.G7A_T1',
+		'weapons.torpedoes.YU-6',
+		'weapons.torpedoes.Mark_46',
+		'weapons.torpedoes.mk46torp_name',
+		'weapons.torpedoes.LTF_5B',
+
+		{4,15,46,2492},
+		{4,15,46,2491},
+		{4,15,46,2490},	
+		{4,15,46,2489},
+		{4,15,46,2488},
+		{4,15,46,2493},
+		{4,15,46,2494},
+		{4,15,46,2495},
+		{4,15,46,20},
+		{4,5,32,95},
+		{4,5,32,94},
+		{4,15,46,2611},
+		{4,15,46,2610},
+		{4,15,46,2609},
+		{4,15,46,2608},
+		{4,15,46,2607},
+		{4,15,46,18},
+		{4,15,46,183},
+		{4,15,46,1771},
+		{4,15,46,1294},
+		{4,15,46,1295},
+		{4,15,46,1770},
+		{4,15,46,1769},
+		{4,15,46,1768},
+		{4,15,46,1767},
+		{4,15,46,1766},
+		{4,15,46,1765},
+		{4,15,46,1764},
+		{4,15,46,1057},
+		{4,15,46,160},
+		{4,15,46,161},
+		{4,15,46,170},
+		{4,15,46,171},
+		{4,15,46,174},
+		{4,15,46,175},
+		{4,15,46,176},
+		{4,15,46,177},
+		{4,15,46,184},
+		{4,15,46,3169},
+		{4,15,46,3102},
+		{4,15,46,3163},
+		{4,15,46,3164},
+		{4,15,46,3165},
+		{4,15,46,3166},
+		{4,15,46,3167},
+		{4,15,46,3168},
+		{4,15,46,3170},
+		{4,15,46,3171},
+
+		-- little bird
+
+		{1,3,43,464},
+		{4,15,46,3155},
+		{4,15,46,3156},
+		{4,15,46,3157},
+		{4,15,46,3158},
+		{4,15,46,3172},
+		{4,15,46,3173},
+		{4,15,46,3174},
+		{4,15,46,3175},
+		{4,15,46,3176},
+		{4,15,46,3177},
+		{4,15,46,3178},
+		{4,15,46,3179},
+		{4,15,46,3180},
+		{4,4,8,11209},
+		{4,4,8,11210},
+		{4,4,8,11211},
+		{4,4,8,11212},
+		{1,3,43,3159},
+		"weapons.bombs.AH6_SMOKE_RED",
+		"weapons.bombs.AH6_SMOKE_GREEN",
+		"weapons.bombs.AH6_SMOKE_YELLOW",
+		"weapons.bombs.AH6_SMOKE_BLUE",
+
     },
 }
 
@@ -20558,7 +20807,6 @@ local WEAPONSLIST_MODS_ITEMS = {
 		'weapons.missiles.P_9M117',
 		'weapons.missiles.SA5V28',
 		'weapons.missiles.AGM_84S',
-		'weapons.missiles.HB_AGM_78',
 		'weapons.missiles.X_29TE',
 		'weapons.missiles.YJ-82',
 		'weapons.missiles.Barrel',
@@ -20578,8 +20826,6 @@ local WEAPONSLIST_MODS_ITEMS = {
 		'weapons.bombs.GBU_30',
 		'weapons.bombs.S_8OM_FLARE',
 		'weapons.bombs.RBK_500SOAB',
-		'weapons.bombs.KAB_500KrOD',
-		'weapons.bombs.BKF_AO2_5RT',
 		'weapons.bombs.RBK_500U_BETAB_M',
 		'weapons.bombs.SAB_100_FLARE',
 		'weapons.bombs.AO_2_5RT',
@@ -20589,16 +20835,16 @@ local WEAPONSLIST_MODS_ITEMS = {
 		'weapons.bombs.PTAB_2_5KO',
 		'weapons.bombs.GBU_17',
 		'weapons.bombs.LUU_19',
-		'weapons.bombs.BKF_PTAB2_5KO',
+		'weapons.bombs.AH6_SMOKE_BLUE',
+		'weapons.bombs.AH6_SMOKE_GREEN',
+		'weapons.bombs.AH6_SMOKE_RED',
+		'weapons.bombs.AH6_SMOKE_YELLOW',
+
 		'weapons.bombs.M257_FLARE',
 		'weapons.bombs.LYSBOMB_CANDLE',
 		'weapons.bombs.SAB_250_FLARE',
 		'weapons.bombs.GBU_29',
 		'weapons.bombs.LUU_2AB',
-		'weapons.torpedoes.Mark_46',
-		'weapons.torpedoes.mk46torp_name',
-		'weapons.torpedoes.LTF_5B',
-		'weapons.torpedoes.YU-6',
 		'weapons.adapters.aku-58',
 		'weapons.adapters.AMBER',
 		'weapons.adapters.BRU_33AA',
@@ -20623,12 +20869,6 @@ local WEAPONSLIST_MODS_ITEMS = {
 		'weapons.adapters.TLAU_127',
 		'weapons.adapters.TWP_35',
 		'weapons.adapters.WingLauncher',
-		'weapons.adapters.ACH_47F_Left_Outboard',
-		'weapons.adapters.ACH_47F_Right_Outboard',
-		'weapons.adapters.ACH_47F_Right_ATAS',
-		'weapons.adapters.ACH_47F_Left_ATAS',
-		'weapons.adapters.ACH_47F_Right',
-		'weapons.adapters.ACH_47F_Left',
 		'weapons.bombs.jas_gbu-31',
 		'weapons.bombs.jas_gbu-31_blu109',
 		'weapons.bombs.jas_gbu-32',
@@ -20762,10 +21002,6 @@ local WEAPONSLIST_MODS_ITEMS = {
 		'weapons.shells.BK_27_PELE',
 		'weapons.shells.OH-6 7.62x51mm HE-I',
 		'weapons.shells.7.62x51mm',
-		{4,4,7,482},
-		{4,4,7,518},
-		{4,15,47,3288},
-		{4,15,47,3425},
 		"weapons.containers.ALQ-167",
 		"weapons.containers.{SPRAYER_P}",
 		"weapons.gunmounts.{ACH_47_M230_NoTracers}",
@@ -20787,7 +21023,11 @@ local WEAPONSLIST_MODS_ITEMS = {
 		"weapons.shells.BK_27_HE",
 		"weapons.shells.BK_27_APHE",
 		"weapons.missiles.Fuel",
-		{4,15,45,3447},
+		"weapons.shells.DroneBombShell",
+		"weapons.gunmounts.{DroneBomb}",
+		"weapons.gunmounts.DroneBombMount",
+		"weapons.containers.A29B_SMOKE-POD",
+		"weapons.containers.null",
 
 	}
 
@@ -20972,11 +21212,11 @@ allowedPlanes = {
   "MB-339APAN","Hercules","Su-25","SA342M","Mirage-F1EDA","OH58D","MiG-15bis_FC","Mirage-F1CZ", "Mirage-F1BQ", "Mirage-F1B",
   "Mirage-F1C-200","Mirage-F1DDA","MiG-15bis","Mirage-F1CJ","Mirage-F1CK","Mirage-F1AZ", "A-10C_2", "Mirage-F1CT","A-10C","M-2000C",
   "Mirage-F1EH","Mirage-F1CH","SA342Minigun","MiG-29A","Bronco-OV-10A","OH-6A", "Mirage-F1CG","F-5E-3","F-86F Sabre","F-14A","L-39C","C-101CC",
-  "SA342L","Mi-8MT","Mirage-F1EE","Mi-24P","CH-47Fbl1","FA-18C_hornet","F-16C_50", "MiG-29 Fulcrum","UH-60L_DAP","C-130J-30","F-14B","AH-64D_BLK_II"}
+  "SA342L","Mi-8MT","Mirage-F1EE","Mi-24P","CH-47Fbl1","FA-18C_hornet","F-16C_50", "MiG-29 Fulcrum","UH-60L_DAP","C-130J-30","F-14B","AH-64D_BLK_II","MH-6J","AH-6J"}
 
 restockAircraft = {
 "FA-18FT","EA-18G","F-22A","FA-18E","B-52H","FA-18F","FA-18ET","F15EX","A-29B","F-23A","Ka-50_3","Ka-50",
-"Bronco-OV-10A","JAS39Gripen_AG","MiG-31BM","JAS39Gripen","Su-35S","UH-60L","OH-6A","Su-35","JAS39Gripen_BVR","SK-60","T-45","UH-60L_DAP", "MiG-29 Fulcrum"}
+"Bronco-OV-10A","JAS39Gripen_AG","MiG-31BM","JAS39Gripen","Su-35S","UH-60L","OH-6A","Su-35","JAS39Gripen_BVR","SK-60","T-45","UH-60L_DAP", "MiG-29 Fulcrum","MH-6J","AH-6J"}
 
 
 
