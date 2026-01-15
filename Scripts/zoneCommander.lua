@@ -2772,15 +2772,19 @@ local function _computeAwacsStationWithZone(side)
                 end
             end
         end
-        if not cx then
-            for n,inf in pairs(zi) do
-                if inf and inf.center and inf.side and inf.side ~= 0 and inf.side ~= side then
-                    local dx = px - inf.center.x
-                    local dy = pz - inf.center.y
-                    local d2 = dx*dx + dy*dy
-                    if d2 < best2 then best2, cx, cy = d2, inf.center.x, inf.center.y end
-                end
+
+        local sx, sy, sBest2 = nil, nil, 1e18
+        for n,inf in pairs(zi) do
+            if inf and inf.center and inf.side and inf.side ~= 0 and inf.side ~= side then
+                local dx = px - inf.center.x
+                local dy = pz - inf.center.y
+                local d2 = dx*dx + dy*dy
+                if d2 < sBest2 then sBest2, sx, sy = d2, inf.center.x, inf.center.y end
             end
+        end
+
+        if sx then
+            return sx, sy
         end
         return cx, cy
     end
@@ -2882,15 +2886,19 @@ local function _computeAwacsStationWithZoneSecondary(side, avoidX, avoidZ, minSe
                 end
             end
         end
-        if not cx then
-            for n,inf in pairs(zi) do
-                if inf and inf.center and inf.side and inf.side ~= 0 and inf.side ~= side then
-                    local dx = px - inf.center.x
-                    local dy = pz - inf.center.y
-                    local d2 = dx*dx + dy*dy
-                    if d2 < best2 then best2, cx, cy = d2, inf.center.x, inf.center.y end
-                end
+
+        local sx, sy, sBest2 = nil, nil, 1e18
+        for n,inf in pairs(zi) do
+            if inf and inf.center and inf.side and inf.side ~= 0 and inf.side ~= side then
+                local dx = px - inf.center.x
+                local dy = pz - inf.center.y
+                local d2 = dx*dx + dy*dy
+                if d2 < sBest2 then sBest2, sx, sy = d2, inf.center.x, inf.center.y end
             end
+        end
+
+        if sx then
+            return sx, sy
         end
         return cx, cy
     end
@@ -2975,6 +2983,8 @@ function setAwacsRacetrack(side, coord, heading, leg, zoneName)
         z = vec and vec.z or nil,
         zone = _awacsZone[side]
     }
+	auf:SetMissionSpeed(350)
+	auf:SetMissionAltitude(30000)
     fg:AddMission(auf)
 end
 
@@ -10094,6 +10104,23 @@ function ZoneCommander:MakeZoneRedAndUpgraded() -- for disabledfriendlyzone to m
     end
 end
 
+
+function ZoneCommander:MakeZoneredandupgradednow() -- for disabledfriendlyzone to make them go red and suspend
+   if self.active and self.side ~= 2 then
+        self:capture(1, true)
+        local upgrades=self:getFilteredUpgrades()
+        local totalUpgrades=#upgrades
+        local function upgradeZone()
+            local builtNow=Utils.getTableSize(self.built)
+            if builtNow<totalUpgrades then
+                self:upgrade(true)
+                timer.scheduleFunction(upgradeZone,{},timer.getTime()+2)
+            end
+        end
+        timer.scheduleFunction(upgradeZone,{},timer.getTime()+1)
+    end
+end
+
 ------------------------ UPGRADE RED ZONE ON COMMAND ------------------------------------
 
 function ZoneCommander:MakeRedZoneUpgraded()
@@ -10631,7 +10658,9 @@ function ZoneCommander:init()
 				end
 				if self.side == 1 then
 					if RespawnStaticsForAirbase then
-						RespawnStaticsForAirbase(self.airbaseName, 1)		
+						RespawnStaticsForAirbase(self.airbaseName, 1)
+						if self.LogisticCenter then self.LogisticCenter = false
+						end
 					end
 					ab:setCoalition(1)
 				end
@@ -10772,10 +10801,10 @@ function ZoneCommander:init()
 				msg = msg .. "\n Mission!"
 			end
 		end
-		if self.LogisticCenter then
-			msg = msg .. "\n [WH]"
-		end
 		if self.side == 2 then
+			if self.LogisticCenter then
+				msg = msg .. "\n [WH]"
+			end
 			local upgrades = self:getFilteredUpgrades()
 			local builtCount = 0
 			for _ in pairs(self.built) do builtCount = builtCount + 1 end
@@ -11051,9 +11080,10 @@ end
 			if SpawnFriendlyAssets then
 				SCHEDULER:New(nil,SpawnFriendlyAssets,{},2,0)
 			end
-			if SpawnFriendlyAssets then
-				SCHEDULER:New(nil,bc:buildCapSpawnBuckets(),{},5,0)
-			end
+
+			SCHEDULER:New(nil,bc:buildCapSpawnBuckets(),{},5,0)
+
+
 			bc:_hasActiveAttackOrPatrolOnZone()
 			self.battleCommander:_rebalanceRedDifficulty()
 		end
@@ -12214,6 +12244,27 @@ function serverHasPlayers()
     return next(AnyPlayers) ~= nil
 end
 
+playerListBlueCas = {}
+
+CasCountExtraTypes = {
+	["AH-64D_BLK_II"] = true,
+	["UH-60L_DAP"] = true,
+	["Mi-24P"] = true,
+	["Ka-50_3"] = true,
+	["Ka-50"] = true,
+	["OH58D"] = true,
+	["A-10C_2"] = true,
+}
+
+function getBlueCasPlayersCount()
+    local cnt = 0
+    for _ in pairs(playerListBlueCas) do
+        cnt = cnt + 1
+    end
+    return cnt
+end
+
+
 playerListBlue = playerListBlue or {}
 playerListRed  = playerListRed  or {}
 function getBluePlayersCount()
@@ -12234,21 +12285,27 @@ end
 --AJS37
 function refreshPlayers()
     local oldBlue = getBluePlayersCount()
+    local oldBlueCas = getBlueCasPlayersCount()
     local oldAny = getAnyPlayersCount()
 
     local b = coalition.getPlayers(coalition.side.BLUE)
     local currentBlue = {}
+    local currentBlueCas = {}
     local currentAll = {}
     for _, unit in ipairs(b) do
         local nm = unit:getPlayerName()
         if nm then
             currentAll[nm] = true
             local desc = unit:getDesc()
+            local unitType = unit:getTypeName()
             if desc and desc.category == Unit.Category.AIRPLANE then
-                if unit:getTypeName() ~= "A-10C_2" and unit:getTypeName() ~= "Hercules" and unit:getTypeName() ~= "A-10A" and unit:getTypeName() ~= "AV8BNA"
-				and unit:getTypeName() ~= "AJS37" and unit:getTypeName() ~= "C-130J-30" then
+                if unitType ~= "A-10C_2" and unitType ~= "Hercules" and unitType ~= "A-10A" and unitType ~= "AV8BNA"
+				and unitType ~= "AJS37" and unitType ~= "C-130J-30" then
                     currentBlue[nm] = true
+                    currentBlueCas[nm] = true
                 end
+            elseif CasCountExtraTypes[unitType] then
+                currentBlueCas[nm] = true
             end
         end
     end
@@ -12259,6 +12316,14 @@ function refreshPlayers()
     end
     for newName in pairs(currentBlue) do
         playerListBlue[newName] = true
+    end
+    for storedName in pairs(playerListBlueCas) do
+        if not currentBlueCas[storedName] then
+            playerListBlueCas[storedName] = nil
+        end
+    end
+    for newName in pairs(currentBlueCas) do
+        playerListBlueCas[newName] = true
     end
 
     local r = coalition.getPlayers(coalition.side.RED)
@@ -12299,8 +12364,9 @@ function refreshPlayers()
     end
 
     local newBlue = getBluePlayersCount()
+    local newBlueCas = getBlueCasPlayersCount()
     local newAny = getAnyPlayersCount()
-    if newBlue ~= oldBlue or newAny ~= oldAny then
+    if newBlue ~= oldBlue or newBlueCas ~= oldBlueCas or newAny ~= oldAny then
         CapLiveMeta = CapLiveMeta or { [1]={ patrol=nil, attack=nil }, [2]={ patrol=nil, attack=nil } }
         for s=1,2 do
             local bp = getBluePlayersCount() or 0
@@ -12316,6 +12382,7 @@ function refreshPlayers()
         end
     end
 end
+
 
 SCHEDULER:New(nil,refreshPlayers,{},10,60)
 
@@ -12380,10 +12447,21 @@ function getRedCapBoost(numPlayers)
 	return n
 end
 
-function getBlueCasLimit(numPlayers)
+function getBlueSeadLimit(numPlayers)
   numPlayers = numPlayers or getBluePlayersCount()
   if numPlayers <= 0 then
-    return 2
+    return 1
+  elseif numPlayers == 1 then
+    return 1
+  else
+    return 0
+  end
+end
+
+function getBlueCasLimit(numPlayers)
+  numPlayers = numPlayers or getBlueCasPlayersCount()
+  if numPlayers <= 0 then
+    return 1
   elseif numPlayers == 1 then
     return 1
   else
@@ -12395,10 +12473,8 @@ end
 function getBlueCapLimit(numPlayers)
   numPlayers = numPlayers or getBluePlayersCount()
   if numPlayers <= 0 then
-    return 2
+    return 1
   elseif numPlayers == 1 then
-    return 2
-  elseif numPlayers == 2 then
     return 1
   else
     return 0
@@ -13115,8 +13191,12 @@ function GroupCommander:shouldSpawn(ignore)
 						return false
 					end
 					local players = getBluePlayersCount() or 0
+					local playersCas = getBlueCasPlayersCount() or 0
 					if self.MissionType=='ANTISHIP' and players > 1 then return false end
-					local limit   = getBlueCasLimit(players) or 0
+					local limit   = getBlueSeadLimit(players) or 0
+					if limit <= 0 then return false end
+					if self.MissionType=='CAS' and playersCas > 1 then return false end
+					local limit   = getBlueCasLimit(playersCas) or 0
 					if limit <= 0 then return false end
 					local active = self.zoneCommander.battleCommander:getActiveCasSeadCount(2,'attack')
 					if active >= limit then
@@ -14687,8 +14767,10 @@ do
 	LogisticCommander.allowedTypes['Bronco-OV-10A'] = true
 	LogisticCommander.allowedTypes['OH-6A'] = true
 	LogisticCommander.allowedTypes['C-130J-30'] = true
+	LogisticCommander.allowedTypes['MH-6J'] = true
+	LogisticCommander.allowedTypes['AH-6J'] = true
 
-	LogisticCommander.AllowedToCarrySupplies = {
+LogisticCommander.AllowedToCarrySupplies = {
     ['Ka-50'] = false,
     ['Ka-50_3'] = false,
     ['Mi-24P'] = true,
@@ -14707,29 +14789,31 @@ do
     ['Bronco-OV-10A'] = true,
     ['OH-6A'] = true,
     ['C-130J-30'] = true,
+	['MH-6J'] = true,
+	['AH-6J'] = true,
 }
 
-	LogisticCommander.AllowedCsar = {
-    ['Ka-50'] = true,
-    ['Ka-50_3'] = true,
-    ['Mi-24P'] = true,
-    ['SA342Mistral'] = true,
-    ['SA342L'] = true,
-    ['SA342M'] = true,
-    ['SA342Minigun'] = true,
-    ['UH-60L'] = true,
-    ['UH-60L_DAP'] = true,
-    ['AH-64D_BLK_II'] = true,
-    ['UH-1H'] = true,
-    ['Mi-8MT'] = true,
-    ['Hercules'] = false,
-    ['OH58D'] = true,
-    ['CH-47Fbl1'] = true,
-    ['Bronco-OV-10A'] = true,
-    ['OH-6A'] = true,
-    ['C-130J-30'] = false,
-    ['MH-6J'] = true,
-    ['AH-6J'] = true,
+LogisticCommander.AllowedCsar = {
+    ['Ka-50'] = 1,
+    ['Ka-50_3'] = 1,
+    ['Mi-24P'] = 8,
+    ['SA342Mistral'] = 3,
+    ['SA342L'] = 3,
+    ['SA342M'] = 3,
+    ['SA342Minigun'] = 3,
+    ['UH-60L'] = 11,
+    ['UH-60L_DAP'] = 11,
+    ['AH-64D_BLK_II'] = 2,
+    ['UH-1H'] = 11,
+    ['Mi-8MT'] = 24,
+    ['Hercules'] = 0,
+    ['OH58D'] = 1,
+    ['CH-47Fbl1'] = 32,
+    ['Bronco-OV-10A'] = 5,
+    ['OH-6A'] = 2,
+    ['C-130J-30'] = 0,
+    ['MH-6J'] = 4,
+    ['AH-6J'] = 4,
 }
 
 	LogisticCommander.doubleSupplyTypes = {}
@@ -14737,7 +14821,11 @@ do
 	LogisticCommander.doubleSupplyTypes['Hercules'] = true
 	LogisticCommander.doubleSupplyTypes['C-130J-30'] = true
 
-	LogisticCommander.maxCarriedPilots = 4
+	--LogisticCommander.maxCarriedPilots = 4
+	LogisticCommander.PilotWeight = 80
+	LogisticCommander.csarHoverDistance = 15
+	LogisticCommander.csarHoverHeight = 40
+	LogisticCommander.csarHoverSeconds = 10
 	
 	LogisticCommander.mooseLogisticsMenus = {}
 
@@ -14761,7 +14849,7 @@ do
 		obj.csarNextTick = {}
 		obj.csarLastAutoDrop = {}
 		obj.csarApproachNear = 3000
-		obj.csarExtractDistance = 500
+		obj.csarExtractDistance = 650
 		obj.csarLoadDistance = 20
 		
 		setmetatable(obj, self)
@@ -15106,7 +15194,9 @@ end
 				trigger.action.outTextForGroup(groupid,"You are moving too fast",15)
 				return
 			end
-			if self.carriedPilots[groupid]>=LogisticCommander.maxCarriedPilots then
+			local unitType=un:getTypeName()
+			local maxCarriedPilots = LogisticCommander.AllowedCsar[unitType]
+			if self.carriedPilots[groupid]>=maxCarriedPilots then
 				trigger.action.outTextForGroup(groupid,"At max capacity",15)
 				return
 			end
@@ -15124,13 +15214,14 @@ end
 					end
 					table.remove(self.ejectedPilots,i)
 					v:destroy()
-					trigger.action.outTextForGroup(groupid,"Pilot onboard ["..self.carriedPilots[groupid].."/"..LogisticCommander.maxCarriedPilots.."]",15)
+					trigger.action.outTextForGroup(groupid,"Pilot onboard ["..self.carriedPilots[groupid].."/"..maxCarriedPilots.."]",15)
 					return
 				end
 			end
 			trigger.action.outTextForGroup(groupid,"No ejected pilots nearby",15)
 		end
 	end
+
 	function LogisticCommander:unloadPilot(groupname)
 			local gr=Group.getByName(groupname)
 			if gr then
@@ -15163,6 +15254,7 @@ end
 					end
 					self.carriedPilotData[groupid]=nil
 					self.carriedPilots[groupid]=0
+					trigger.action.setUnitInternalCargo(un:getName(),0)
 				return
 			end
 		end
@@ -15345,6 +15437,8 @@ end
 		self.csarAssignedGroup = self.csarAssignedGroup or {}
 		self.csarRouteIssued = self.csarRouteIssued or {}
 		self.csarPilotDataByObject = self.csarPilotDataByObject or {}
+		self.csarHoverStatus = self.csarHoverStatus or {}
+		self.csarNearStatus = self.csarNearStatus or {}
 		local tocleanup = {}
 		self.ejectedPilotsState = self.ejectedPilotsState or {}
 		for i = #self.ejectedPilotsState, 1, -1 do
@@ -15380,13 +15474,82 @@ end
 			end
 		end
 
-		local function boardPilot(pilotObj, heliUnit, groupid)
+		local function boardPilot(pilotObj, heliUnit, groupid, fromScheduler)
 			local pid = pilotObj:getObjectID()
 			local pilotData = landedPilotOwners[pid] or self.csarPilotDataByObject[pid] or ejectedPilotOwners[pid]
 			local current = self.carriedPilots[groupid] or 0
-			if current >= (LogisticCommander.maxCarriedPilots or 6) then
+			local unitType = heliUnit:getTypeName()
+			local maxCarriedPilots = LogisticCommander.AllowedCsar[unitType]
+
+			if Utils.isInAir(heliUnit) then
+				local pp = pilotObj:getPoint()
+				local hp = heliUnit:getPoint()
+				local dx = hp.x - pp.x
+				local dz = hp.z - pp.z
+				local hoverDist = LogisticCommander.csarHoverDistance or 10
+				if (dx*dx + dz*dz) <= (hoverDist*hoverDist) then
+					local agl = Utils.getAGL(heliUnit)
+					if agl <= (LogisticCommander.csarHoverHeight or 20) and UTILS.VecNorm(heliUnit:getVelocity()) <= 5 then
+						self.csarHoverStatus = self.csarHoverStatus or {}
+						local st = self.csarHoverStatus[pid]
+						if not st then
+							st = {}
+							self.csarHoverStatus[pid] = st
+						end
+						local now = timer.getTime()
+						local deadline = st[groupid]
+						if not deadline then
+							deadline = now + (LogisticCommander.csarHoverSeconds or 10)
+							st[groupid] = deadline
+							if not st["sched_"..groupid] then
+								st["sched_"..groupid] = true
+								timer.scheduleFunction(function()
+									if not self.csarHoverStatus or not self.csarHoverStatus[pid] or not self.csarHoverStatus[pid][groupid] then
+										st["sched_"..groupid] = nil
+										return
+									end
+									if boardPilot(pilotObj, heliUnit, groupid, true) then
+										st["sched_"..groupid] = nil
+										return
+									end
+									if not self.csarHoverStatus or not self.csarHoverStatus[pid] or not self.csarHoverStatus[pid][groupid] then
+										st["sched_"..groupid] = nil
+										return
+									end
+									return timer.getTime() + 2
+								end, {}, now + 0.1)
+							end
+						end
+						local remaining = math.floor((deadline - now) + 0.999)
+						if remaining > 0 then
+							if fromScheduler then
+								local pilotName = (pilotData and pilotData.player and pilotData.player~='') and pilotData.player or "Downed pilot"
+								trigger.action.outTextForGroup(groupid, "Picking up " .. pilotName .. ". Hold hover for " .. remaining .. "s.", 1)
+							end
+							return false
+						end
+						st[groupid] = nil
+					else
+						if self.csarHoverStatus and self.csarHoverStatus[pid] then
+							self.csarHoverStatus[pid][groupid] = nil
+						end
+						return false
+					end
+				else
+					if self.csarHoverStatus and self.csarHoverStatus[pid] then
+						self.csarHoverStatus[pid][groupid] = nil
+					end
+					return false
+				end
+			else
+				if self.csarHoverStatus and self.csarHoverStatus[pid] then
+					self.csarHoverStatus[pid][groupid] = nil
+				end
+			end
+
+			if current >= maxCarriedPilots then
 				trigger.action.outTextForGroup(groupid, "At max capacity", 8)
-				return
+				return false
 			end
 			self.carriedPilots[groupid] = current + 1
 			self.carriedPilotData[groupid] = self.carriedPilotData[groupid] or {}
@@ -15395,6 +15558,8 @@ end
 			self.csarPilotDataByObject[pid] = nil
 			ejectedPilotOwners[pid] = nil
 			self.csarNextTick[pid] = nil
+			self.csarHoverStatus[pid] = nil
+			trigger.action.setUnitInternalCargo(heliUnit:getName(), (self.carriedPilots[groupid] or 0) * (LogisticCommander.PilotWeight or 80))
 			local playerName = heliUnit:getPlayerName()
 			local pickupReward=0
 			if self.battleCommander.playerRewardsOn and playerName and bc.playerContributions[2][playerName] ~= nil then
@@ -15419,14 +15584,25 @@ end
 					trigger.action.outTextForCoalition(heliUnit:getCoalition(),"["..playerName.."] rescued ["..pilotName.."]. Land at any friendly zone to drop off.",10)
 				end
 			end
+			if fromScheduler then
+				for j = #self.ejectedPilots, 1, -1 do
+					local p = self.ejectedPilots[j]
+					if p and p:getObjectID() == pid then
+						table.remove(self.ejectedPilots, j)
+						break
+					end
+				end
+			end
+
 			pilotObj:destroy()
-			trigger.action.outTextForGroup(groupid, "Pilot onboard ["..self.carriedPilots[groupid].."/"..(LogisticCommander.maxCarriedPilots or 6).."]", 10)
+			trigger.action.outTextForGroup(groupid, "Pilot onboard ["..self.carriedPilots[groupid].."/"..maxCarriedPilots.."]", 10)
 			self.csarAssignedGroup[pid] = nil
 			self.csarRouteIssued[pid] = nil
 			self.csarVisibleMsg[pid] = nil
 			self.csarCloseMsg[pid] = nil
 			self.csarRunEta[pid] = nil
 
+			return true
 
 		end
 
@@ -15509,10 +15685,25 @@ end
 				if p then
 					self.csarCloseClusterMsg[gid] = { t = now, x = p.x, z = p.z }
 				end
-				trigger.action.outTextForGroup(gid, "You're close now! Land in a safe place, we will come to you.", 10)
+				local msg = "You're close now! Land in a safe place, we will come to you."
+				local hp = heliUnit:getPoint()
+				if hp and p then
+					local bearing = math.deg(math.atan2(p.z - hp.z, p.x - hp.x))
+					if bearing < 0 then bearing = bearing + 360 end
+					local pos = heliUnit:getPosition()
+					local heading = math.deg(math.atan2(pos.x.z, pos.x.x))
+					if heading < 0 then heading = heading + 360 end
+					local rel = bearing - heading
+					rel = rel % 360
+					local clock = math.floor((rel + 15) / 30)
+					if clock == 0 then clock = 12 end
+					msg = "You're close now! I'm at your " .. clock .. " o'clock. Land in a safe place, we will come to you."
+				end
+				trigger.action.outTextForGroup(gid, msg, 10)
 				shown[gid] = true
 			end
 		end
+
 
 		-- iterate helos vs pilots
 		local now = timer.getTime()
@@ -15582,11 +15773,132 @@ end
 					end
 				end
 				local anyNear = false
+				local bestNextTick = now + 10
 				for _, entry in ipairs(candidates) do
 					local un = entry.unit
 					local groupid = entry.groupid
 					if not assignedGroupid or groupid == assignedGroupid then
 						local dist = UTILS.VecDist3D(un:getPoint(), pilotPoint)
+
+						if dist < 2500 then
+							if not self.csarNearStatus[pid] then
+								self.csarNearStatus[pid] = true
+								timer.scheduleFunction(function()
+									if not self.csarNearStatus or not self.csarNearStatus[pid] then return end
+									if not pilotObj or not pilotObj:isExist() then
+										self.csarNearStatus[pid] = nil
+										return
+									end
+									local pilotPointFast = pilotObj:getPoint()
+									local candidatesFast = {}
+									local seenFast = {}
+									local function addUnitFast(unFast)
+										if not unFast or not unFast:isExist() then return end
+										if not unFast:getPlayerName() then return end
+										local gFast = unFast:getGroup()
+										if not gFast then return end
+										local gidFast = gFast:getID()
+										if seenFast[gidFast] then return end
+										if not self.csarGroupMenus[gidFast] then return end
+										seenFast[gidFast] = true
+										candidatesFast[#candidatesFast+1] = { unit = unFast, groupid = gidFast }
+									end
+
+									local heliSetFast = self.csarSet
+									if heliSetFast and heliSetFast.ForEachGroupAlive then
+										heliSetFast:ForEachGroupAlive(function(mooseGroup)
+											local unitWrapper = mooseGroup and mooseGroup:GetUnit(1)
+											local unitRef = unitWrapper and unitWrapper:GetDCSObject()
+											if unitRef and unitRef:isExist() and unitRef:getPlayerName() and self.allowedTypes[unitRef:getTypeName()] then
+												addUnitFast(unitRef)
+											end
+										end)
+									else
+										for gid, entry in pairs(self.csarGroups) do
+											local gname = (entry and entry.name) or (self.groupIdToName and self.groupIdToName[gid])
+											local gr = gname and Group.getByName(gname) or nil
+											local unitRef = gr and gr:getUnit(1) or nil
+											if unitRef and unitRef:isExist() and unitRef:getPlayerName() and self.allowedTypes[unitRef:getTypeName()] then
+												addUnitFast(unitRef)
+											end
+										end
+									end
+
+									local anyCloseFast = false
+									for _, entryFast in ipairs(candidatesFast) do
+										local unFast = entryFast.unit
+										local groupidFast = entryFast.groupid
+										local distFast = UTILS.VecDist3D(unFast:getPoint(), pilotPointFast)
+
+										if distFast < 2500 then
+											anyCloseFast = true
+										end
+
+										if distFast < self.csarApproachNear then
+											approachMessage(pid, unFast, pilotObj)
+										end
+										if distFast < self.csarExtractDistance then
+											closeMessage(pid, unFast, pilotObj)
+										end
+										if not Utils.isInAir(unFast) and distFast < self.csarExtractDistance then
+											if not self.csarAssignedGroup[pid] then
+												self.csarAssignedGroup[pid] = groupidFast
+											end
+											local runEta = self.csarRunEta[pid]
+											if not runEta then
+												runEta = {}
+												self.csarRunEta[pid] = runEta
+											end
+											if not runEta[groupidFast] then
+												local pilotData = landedPilotOwners[pid] or self.csarPilotDataByObject[pid] or ejectedPilotOwners[pid]
+												local pilotName = (pilotData and pilotData.player and pilotData.player~='') and pilotData.player or "Downed pilot"
+												local eta = math.floor((distFast - self.csarLoadDistance) / 3.6)
+												if eta < 0 then eta = 0 end
+												runEta[groupidFast] = eta
+												trigger.action.outTextForGroup(groupidFast, pilotName..": I\'m coming to you.\nETA "..eta.." seconds.", 10)
+											end
+											if self.csarRouteIssued[pid] ~= groupidFast then
+												self.csarRouteIssued[pid] = groupidFast
+												runPilotToHelo(pilotObj, unFast)
+											end
+										end
+
+										if distFast < self.csarLoadDistance then
+											if boardPilot(pilotObj, unFast, groupidFast) then
+												for j = #self.ejectedPilots, 1, -1 do
+													if self.ejectedPilots[j] == pilotObj then
+														table.remove(self.ejectedPilots, j)
+														break
+													end
+												end
+												self.csarNearStatus[pid] = nil
+												self.csarNextTick[pid] = nil
+												return
+											end
+										elseif Utils.isInAir(unFast) and distFast < ((LogisticCommander.csarHoverDistance or 10) + (LogisticCommander.csarHoverHeight or 20)) then
+											if boardPilot(pilotObj, unFast, groupidFast) then
+												for j = #self.ejectedPilots, 1, -1 do
+													if self.ejectedPilots[j] == pilotObj then
+														table.remove(self.ejectedPilots, j)
+														break
+													end
+												end
+												self.csarNearStatus[pid] = nil
+												self.csarNextTick[pid] = nil
+												return
+											end
+										end
+									end
+
+									if not anyCloseFast then
+										self.csarNearStatus[pid] = nil
+										return
+									end
+
+									return timer.getTime() + 3
+								end, {}, timer.getTime() + 3)
+							end
+						end
 
 						if assignedGroupid and (Utils.isInAir(un) or dist > self.csarExtractDistance) then
 							self.csarAssignedGroup[pid] = nil
@@ -15608,7 +15920,7 @@ end
 							if dist < self.csarApproachNear then
 								approachMessage(pid, un, pilotObj)
 							end							
-							if dist < 600 then
+							if dist < self.csarExtractDistance then
 								closeMessage(pid, un, pilotObj)
 							end
 							if not Utils.isInAir(un) and dist < self.csarExtractDistance then
@@ -15635,19 +15947,37 @@ end
 								end
 							end
 							if dist < self.csarLoadDistance then
-								boardPilot(pilotObj, un, groupid)
-								self.csarNextTick[pid] = nil
-								table.remove(self.ejectedPilots, i)
-								return
+								if boardPilot(pilotObj, un, groupid) then
+									self.csarNextTick[pid] = nil
+									table.remove(self.ejectedPilots, i)
+									return
+								end
+							elseif Utils.isInAir(un) and dist < ((LogisticCommander.csarHoverDistance or 10) + (LogisticCommander.csarHoverHeight or 20)) then
+								if boardPilot(pilotObj, un, groupid) then
+									self.csarNextTick[pid] = nil
+									table.remove(self.ejectedPilots, i)
+									return
+								end
 							end
-							if dist >= self.csarApproachNear then
-								self.csarNextTick[pid] = now + 10
+							local candidateNextTick
+							if dist < self.csarLoadDistance then
+								candidateNextTick = now + 1
+							elseif Utils.isInAir(un) and dist < ((LogisticCommander.csarHoverDistance or 10) + (LogisticCommander.csarHoverHeight or 20)) then
+								candidateNextTick = now + 1
+							elseif dist < self.csarExtractDistance then
+								candidateNextTick = now + 3
+							elseif dist >= self.csarApproachNear then
+								candidateNextTick = now + 10
 							else
-								self.csarNextTick[pid] = now + 5
+								candidateNextTick = now + 5
+							end
+							if candidateNextTick < bestNextTick then
+								bestNextTick = candidateNextTick
 							end
 						end
 					end
 				end
+				self.csarNextTick[pid] = bestNextTick
 				if not anyNear then
 					self.csarVisibleMsg[pid] = nil
 					self.csarCloseMsg[pid] = nil
@@ -15905,7 +16235,7 @@ function LogisticCommander:init()
 							missionCommands.removeItemForGroup(groupid, self.context.groupMenus[groupid])
 						end
 							self.context.groupMenus[groupid] = nil
-					if LogisticCommander.AllowedCsar and LogisticCommander.AllowedCsar[unitType] then
+					if LogisticCommander.AllowedCsar[unitType] > 0 then
 						self.context.csarGroupMenus[groupid] = true
 						local csar = missionCommands.addSubMenuForGroup(groupid, 'CSAR')
 						missionCommands.addCommandForGroup(groupid, 'Info on closest pilot', csar, self.context.infoPilot, self.context, groupname)

@@ -112,6 +112,12 @@ LogisticCommander.AllowedToCarrySupplies = {
     ['C-130J-30'] = true,
 }
 
+-- CSAR settings
+LogisticCommander.PilotWeight = 80
+LogisticCommander.csarHoverDistance = 15
+LogisticCommander.csarHoverHeight = 40
+LogisticCommander.csarHoverSeconds = 10
+
 -- load the rest of the scripts
 assert(loadfile(FOOTHOLD_DYNAMIC_SCRIPTS_PATH .. "WelcomeMessage.lua")) ()
 assert(loadfile(FOOTHOLD_DYNAMIC_SCRIPTS_PATH .. "Zeus.lua")) ()

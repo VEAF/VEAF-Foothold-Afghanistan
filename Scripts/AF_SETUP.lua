@@ -96,7 +96,7 @@ upgrades = {
 	},
 	EWRMantisNet = {
 		blue = {},
-		red = {'Red EWR Camp Bastion Fixed', 'Red EWR Nimroz Fixed', 'Red EWR Jamsheed Fixed', 'Red EWR Chaghcharan Fixed', 'Red EWR Bagram Fixed','Red EWR Sharana Fixed','Red EWR Herat Fixed'}
+		red = {'Red EWR Camp Bastion Fixed', 'Red EWR Nimroz Fixed', 'Red EWR Jamsheed Fixed', 'Red EWR Chaghcharan Fixed', 'Red EWR Bagram Fixed','Red EWR Sharana Fixed','Red EWR Farah Fixed'}
 	},
     convoy = {
         blue = { "blueInfantry" },
@@ -1235,6 +1235,13 @@ zones.fenty.airbaseName = 'FOB-Fenty'
 zones.khost.airbaseName = 'Khost'
 
 zones.urgoon.airbaseName = 'Urgoon Heliport'
+
+SCHEDULER:New(nil,function()
+if not CustomFlags["EWR Updated"] then
+zones.hiddenewr:MakeZoneredandupgradednow()
+CustomFlags["EWR Updated"] = true
+end
+end,{},5)
 
 --
 --------------------------------------------end Airbase definitions------------------------
@@ -3930,7 +3937,7 @@ mc:trackMission({
 [[We need supply routes for planes through Pakistan. 
 Capture Khost to assist with the supply runs. 
 Afterwards you can also use the base to fly from in times of need.]],
-	messageStart = "New Capture mission: Special forces need to capture this zone",
+	messageStart = "New Capture mission: Special forces need to capture Khost",
 	messageEnd = "Capture mission ended: Capture Khost",
     startAction = function()
          if not missionCompleted and trigger.misc.getUserFlag(180) == 0 then
@@ -3943,6 +3950,7 @@ Afterwards you can also use the base to fly from in times of need.]],
         end
 	end,
 	isActive = function()
+    if bc:getZoneByName('Urgoon Heliport').side == 0 then return false end
     if bc:getZoneByName('Gardez').side == 2 and bc:getZoneByName('Khost').side == 0 then return true end
 	return false
 	end
@@ -3956,7 +3964,7 @@ mc:trackMission({
 [[We need more supply routes for Helicopters through Pakistan. 
 Capture Urgoon Heliport to assist with the supply runs. 
 Afterwards you can also use the base to fly from in times of need.]],
-	messageStart = "New Capture mission: Special forces need to capture this zone",
+	messageStart = "New Capture mission: Special forces need to capture Urgoon Heliport",
 	messageEnd = "Capture mission ended: Capture Urgoon Heliport",
     startAction = function()
          if not missionCompleted and trigger.misc.getUserFlag(180) == 0 then
@@ -4143,19 +4151,17 @@ mc:trackMission({
 })
 -------------------------end Bodyguards-------------------------------
 ----------------------------------------------- EWRS - Camp Bastion -----------------------------------------------------------
-Group.getByName('Red EWR Camp Bastion Fixed'):destroy()
 evc:addEvent({
 	id='Red EWR Camp Bastion Fixed',
 	action = function()
-	RespawnGroup('Red EWR Camp Bastion Fixed')
+    ActiveMission['Red EWR Camp Bastion Fixed'] = true
 	RegisterGroupTarget('Red EWR Camp Bastion Fixed',300,'Destroy the EWR at Camp Bastion','Red EWR Camp Bastion Fixed')
 	end,
 	canExecute = function()
-		--if math.random(1,100) < 70 then return false end
-		if Group.getByName('Red EWR Camp Bastion Fixed') then return false end
+		if ActiveMission['Red EWR Camp Bastion Fixed'] then return false end
+		if not Group.getByName('Red EWR Camp Bastion Fixed') then return false end
 		if CustomFlags["Red EWR Camp Bastion Fixed"] then return false end
-		local Bost =  bc:getZoneByName('Bost')
-		if Bost.side ~= 2 then return false end
+		if bc:getZoneByName('Bost').side ~= 2 then return false end
 	return true
 end
 })
@@ -4184,26 +4190,24 @@ Elevation 2916 feet]],
 	end,
 	isActive = function()
 	if CustomFlags["Red EWR Camp Bastion Fixed"] then return false end
-	if IsGroupActive('Red EWR Camp Bastion Fixed') then return true end
+    if ActiveMission['Red EWR Camp Bastion Fixed'] then return true end
 	return false
 	end,
 })
 
 -----------------------------------------------END EWRS - Camp Bastion -----------------------------------------------------------
 ----------------------------------------------- EWRS - Nimroz -----------------------------------------------------------
-Group.getByName('Red EWR Nimroz Fixed'):destroy()
 evc:addEvent({
 	id='Red EWR Nimroz Fixed',
 	action = function()
-	RespawnGroup('Red EWR Nimroz Fixed')
+    ActiveMission['Red EWR Nimroz Fixed'] = true
 	RegisterGroupTarget('Red EWR Nimroz Fixed',300,'Destroy the EWR at Nimroz','Red EWR Nimroz Fixed')
 	end,
 	canExecute = function()
-		--if math.random(1,100) < 70 then return false end
-		if Group.getByName('Red EWR Nimroz Fixed') then return false end
+        if ActiveMission['Red EWR Nimroz Fixed'] then return false end
+		if not Group.getByName('Red EWR Nimroz Fixed') then return false end
 		if CustomFlags["Red EWR Nimroz Fixed"] then return false end
-		local Dwyer =  bc:getZoneByName('Dwyer')
-		if Dwyer.side ~= 2 then return false end
+		if bc:getZoneByName('Dwyer').side ~= 2 then return false end
 	return true
 end
 })
@@ -4232,26 +4236,25 @@ Elevation 2381 feet]],
 	end,
 	isActive = function()
 	if CustomFlags["Red EWR Nimroz Fixed"] then return false end
-	if Group.getByName('Red EWR Nimroz Fixed') then return true end
+    if ActiveMission['Red EWR Nimroz Fixed'] then return true end
 	return false
 	end,
 })
 
 -----------------------------------------------END EWRS - Nimroz -----------------------------------------------------------
 ----------------------------------------------- EWRS - Herat -----------------------------------------------------------
-Group.getByName('Red EWR Herat Fixed'):destroy()
 evc:addEvent({
 	id='Red EWR Herat Fixed',
 	action = function()
-	RespawnGroup('Red EWR Herat Fixed')
+    ActiveMission['Red EWR Herat Fixed'] = true
 	RegisterGroupTarget('Red EWR Herat Fixed',300,'Destroy the EWR at Herat','Red EWR Herat Fixed')
 	end,
 	canExecute = function()
+        if ActiveMission['Red EWR Herat Fixed'] then return false end
 		--if math.random(1,100) < 70 then return false end
-		if Group.getByName('Red EWR Nimroz Fixed') then return false end
+		if not Group.getByName('Red EWR Nimroz Fixed') then return false end
 		if CustomFlags["Red EWR Nimroz Fixed"] then return false end
-		local Shindand =  bc:getZoneByName('Shindand')
-		if Shindand.side ~= 2 then return false end
+		 if bc:getZoneByName('Shindand').side ~= 2 then return false end
 	return true
 end
 })
@@ -4280,26 +4283,24 @@ Elevation 7676 feet]],
 	end,
 	isActive = function()
 	if CustomFlags["Red EWR Herat Fixed"] then return false end
-	if Group.getByName('Red EWR Herat Fixed') then return true end
+	if ActiveMission['Red EWR Herat Fixed'] then return true end
 	return false
 	end,
 })
 
 -----------------------------------------------END EWRS - Herat -----------------------------------------------------------
 ----------------------------------------------- EWRS - Chaghcharan -----------------------------------------------------------
-Group.getByName('Red EWR Chaghcharan Fixed'):destroy()
 evc:addEvent({
 	id='Red EWR Chaghcharan Fixed',
 	action = function()
-	RespawnGroup('Red EWR Chaghcharan Fixed')
+    ActiveMission['Red EWR Chaghcharan Fixed'] = true
 	RegisterGroupTarget('Red EWR Chaghcharan Fixed',300,'Destroy the EWR at Chaghcharan','Red EWR Chaghcharan Fixed')
 	end,
 	canExecute = function()
-		--if math.random(1,100) < 70 then return false end
-		if Group.getByName('Red EWR Chaghcharan Fixed') then return false end
+		if ActiveMission['Red EWR Chaghcharan Fixed'] then return false end
+		if not Group.getByName('Red EWR Chaghcharan Fixed') then return false end
 		if CustomFlags["Red EWR Chaghcharan Fixed"] then return false end
-		local Maymana =  bc:getZoneByName('Maymana Zahiraddin Faryabi')
-		if Maymana.side ~= 2 then return false end
+		if bc:getZoneByName('Maymana Zahiraddin Faryabi').side ~= 2 then return false end
 	return true
 end
 })
@@ -4328,26 +4329,24 @@ Elevation 11051 feet]],
 	end,
 	isActive = function()
 	if CustomFlags["Red EWR Chaghcharan Fixed"] then return false end
-	if Group.getByName('Red EWR Chaghcharan Fixed') then return true end
+    if ActiveMission['Red EWR Chaghcharan Fixed'] then return true end
 	return false
 	end,
 })
 
 -----------------------------------------------END EWRS - Chaghcharan -----------------------------------------------------------
 ----------------------------------------------- EWRS - Jamsheed -----------------------------------------------------------
-Group.getByName('Red EWR Jamsheed Fixed'):destroy()
 evc:addEvent({
 	id='Red EWR Jamsheed Fixed',
 	action = function()
-	RespawnGroup('Red EWR Jamsheed Fixed')
+	ActiveMission['Red EWR Jamsheed Fixed'] = true
 	RegisterGroupTarget('Red EWR Jamsheed Fixed',300,'Destroy the EWR at Jamsheed SAM site','Red EWR Jamsheed Fixed')
 	end,                                                                          
 	canExecute = function()
-		--if math.random(1,100) < 70 then return false end
-		if Group.getByName('Red EWR Jamsheed Fixed') then return false end
+        if ActiveMission['Red EWR Jamsheed Fixed'] then return false end
+		if not Group.getByName('Red EWR Jamsheed Fixed') then return false end
 		if CustomFlags["Red EWR Jamsheed Fixed"] then return false end
-		local Chaghcharan =  bc:getZoneByName('Chaghcharan')
-		if Chaghcharan.side ~= 2 then return false end
+		if bc:getZoneByName('Chaghcharan').side ~= 2 then return false end
 	return true
 end
 })
@@ -4360,11 +4359,11 @@ Destroy this EWRS to help with SAM site threats.
 
 Reward: 300
 
-MGRS GRID: 41 S PT 93751 34301
-Lat Long Standard: N 33°43'51" E 65°05'28"
-Lat Long Decimal Minutes: N 33°43.863' E 65°05.478'
+MGRS GRID: 41 S PT 75189 12172
+Lat Long Standard: N 33°32'05" E 64°53'12"
+Lat Long Decimal Minutes: N 33°32.088' E 64°53.202'
 
-Elevation 10916 feet]],
+Elevation 12668 feet]],
 	messageStart = "New strike mission: Destroy the EWR at Jamsheed SAM site",
 	messageEnd = "Strike mission ended: Destroy the EWR at Jamsheed SAM site",
     startAction = function()
@@ -4376,26 +4375,24 @@ Elevation 10916 feet]],
 	end,
 	isActive = function()
 	if CustomFlags["Red EWR Jamsheed Fixed"] then return false end
-	if Group.getByName('Red EWR Jamsheed Fixed') then return true end
+    if ActiveMission['Red EWR Jamsheed Fixed'] then return true end
 	return false
 	end,
 })
 
 -----------------------------------------------END EWRS - SAM Jamsheed -----------------------------------------------------------
 ----------------------------------------------- EWRS - Bagram -----------------------------------------------------------
-Group.getByName('Red EWR Bagram Fixed'):destroy()
 evc:addEvent({
 	id='Red EWR Bagram Fixed',
 	action = function()
-	RespawnGroup('Red EWR Bagram Fixed')
+	ActiveMission['Red EWR Bagram Fixed'] = true
 	RegisterGroupTarget('Red EWR Bagram Fixed',300,'Destroy the EWR at Bagram','Red EWR Bagram Fixed')
 	end,
 	canExecute = function()
-		--if math.random(1,100) < 70 then return false end
-		if Group.getByName('Red EWR Bagram Fixed') then return false end
+        if ActiveMission['Red EWR Bagram Fixed'] then return false end
+		if not Group.getByName('Red EWR Bagram Fixed') then return false end
 		if CustomFlags["Red EWR Bagram Fixed"] then return false end
-		local Bamyan =  bc:getZoneByName('Bamyan')
-		if Bamyan.side ~= 2 then return false end
+		if bc:getZoneByName('Bamyan').side ~= 2 then return false end
 	return true
 end
 })
@@ -4424,26 +4421,24 @@ Elevation 4814 feet]],
 	end,
 	isActive = function()
 	if CustomFlags["Red EWR Bagram Fixed"] then return false end
-	if Group.getByName('Red EWR Bagram Fixed') then return true end
+    if ActiveMission['Red EWR Bagram Fixed'] then return true end
 	return false
 	end,
 })
 
 -----------------------------------------------END EWRS - Bagram-----------------------------------------------------------
 ----------------------------------------------- EWRS - Sharana -----------------------------------------------------------
-Group.getByName('Red EWR Sharana Fixed'):destroy()
 evc:addEvent({
 	id='Red EWR Sharana Fixed',
 	action = function()
-	RespawnGroup('Red EWR Sharana Fixed')
+    ActiveMission['Red EWR Sharana Fixed'] = true
 	RegisterGroupTarget('Red EWR Sharana Fixed',300,'Destroy the EWR at Sharana','Red EWR Sharana Fixed')
 	end,
 	canExecute = function()
-		--if math.random(1,100) < 70 then return false end
-		if Group.getByName('Red EWR Sharana Fixed') then return false end
+        if ActiveMission['Red EWR Sharana Fixed'] then return false end
+        if not Group.getByName('Red EWR Sharana Fixed') then return false end
 		if CustomFlags["Red EWR Sharana Fixed"] then return false end
-		local Ghazni =  bc:getZoneByName('Ghazni Heliport')
-		if Ghazni.side ~= 2 then return false end
+		if bc:getZoneByName('Ghazni Heliport').side ~= 2 then return false end
 	return true
 end
 })
@@ -4456,11 +4451,11 @@ Destroy this EWRS to help with SAM site threats.
 
 Reward: 300
 
-MGRS GRID: 42 S VB 87209 63442
-Lat Long Standard: N 33°06'34" E 68°51'46"
-Lat Long Decimal Minutes: N 33°06.574' E 68°51.774'
+MGRS GRID: 42 S WB 01484 67453
+Lat Long Standard: N 33°08'44" E 69°00'57"
+Lat Long Decimal Minutes: N 33°08.749' E 69°00.955'
 
-Elevation 7365 feet]],
+Elevation 9829 feet]],
 	messageStart = "New strike mission: Destroy the EWR at Sharana",
 	messageEnd = "Strike mission ended: Destroy the EWR at Sharana",
     startAction = function()
@@ -4472,7 +4467,7 @@ Elevation 7365 feet]],
 	end,
 	isActive = function()
 	if CustomFlags["Red EWR Sharana Fixed"] then return false end
-	if Group.getByName('Red EWR Sharana Fixed') then return true end
+    if ActiveMission['Red EWR Sharana Fixed'] then return true end
 	return false
 	end,
 })

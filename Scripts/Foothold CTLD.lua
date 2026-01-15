@@ -135,11 +135,11 @@ Foothold_ctld:AddUnits("FV-101 Scorpion",{"CTLD_CARGO_Scorpion"}, CTLD_CARGO.Enu
 
 Foothold_ctld:AddStaticsCargo("Zone supplies C-130J",5000,nil, "Zone supplies", true, nil, {"C-130J-30"})
 
-Foothold_ctld:AddStaticsCargo("Zone supplies CH-47",5000,nil, "Zone supplies", true, nil,{"CH-47Fbl1"})
+Foothold_ctld:AddStaticsCargo("Zone supplies CH-47",4000,nil, "Zone supplies", true, nil,{"CH-47Fbl1"})
 
 Foothold_ctld:AddStaticsCargo("Zone supplies UH-1H",500,nil, "Zone supplies", true,nil, {"UH-1H"})
 
-Foothold_ctld:AddStaticsCargo("Zone supplies MI-8",5000,nil, "Zone supplies", true,nil, {"Mi-8MT"})
+Foothold_ctld:AddStaticsCargo("Zone supplies MI-8",4000,nil, "Zone supplies", true,nil, {"Mi-8MT"})
 
 Foothold_ctld:AddStaticsCargo("Zone supplies Blackhawk",2000,nil, "Zone supplies", true,nil, {"UH-60L_DAP","UH-60L"})
 
@@ -232,8 +232,8 @@ Foothold_ctld:SetUnitCapabilities("SA342L", false, true, 0, 2, 10, 400)
 Foothold_ctld:SetUnitCapabilities("SA342M", false, true, 0, 2, 10, 400)
 Foothold_ctld:SetUnitCapabilities("SA342Minigun", false, true, 0, 2, 10, 400)
 Foothold_ctld:SetUnitCapabilities("UH-1H", true, true, 1, 8, 15, 800)
-Foothold_ctld:SetUnitCapabilities("Mi-8MT", true, true, 2, 16, 15, 6000)
-Foothold_ctld:SetUnitCapabilities("Mi-8MTV2", true, true, 2, 18, 15, 6000)
+Foothold_ctld:SetUnitCapabilities("Mi-8MT", true, true, 3, 16, 15, 6000)
+Foothold_ctld:SetUnitCapabilities("Mi-8MTV2", true, true, 3, 18, 15, 6000)
 Foothold_ctld:SetUnitCapabilities("Ka-50", false, false, 0, 0, 15, 400)
 Foothold_ctld:SetUnitCapabilities("Mi-24P", true, true, 2, 8, 15, 1000)
 Foothold_ctld:SetUnitCapabilities("Mi-24V", true, true, 2, 8, 15, 1000)
