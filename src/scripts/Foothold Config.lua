@@ -34,6 +34,7 @@ FootholdConfigTrackedTableNames = {
     "RedSeadPlaneEnabled",
     "BlueSeadPlaneEnabled",
     "RedRunwayStrikePlaneEnabled",
+    "RedEnemyStrikePlaneEnabled",
     "RedCasHeloEnabled",
     "BlueCasHeloEnabled",
     "RedSupplyHeloEnabled",
@@ -74,9 +75,14 @@ FootholdConfigTrackedTableNames = {
 }
 -- Add new top-level scalar settings here so an omitted external setting triggers the warning.
 FootholdConfigTrackedScalarNames = {
-    "ZoneSelfRepairAndUpgradeTime",
+    "ewrs_enabled",
     "PlayerZoneSuppliesConsumeStock",
     "RadioMenuStopSupplies",
+    "ZoneCaptureBuildSeconds",
+    "NormalSupplyCapacity",
+    "WarehouseSupplyCapacity",
+    "CTLDSupplyCapacity",
+    "ExtraRedRepairTimeLowPlayerCountPercent",
 }
 
 local function applyExternalConfigWithFallbackWarning()
@@ -182,7 +188,7 @@ Era = "Modern"
 
 -- Choose which RED SAM templates are allowed when the mission replaces or randomizes SAM groups.
 -- Untick a SAM type to prevent that template from being used.
--- @gui label="RED SAM templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select RED SAM templates based on Era?"
+-- @gui label="RED SAM templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select RED SAM templates based on Era?" installPolicy="replaceTable"
 -- @gui untickRowsWhen="NoSA10AndSA11:true:SA-10|SA-11;NoTorM2AndPantsir:true:Tor M2|Pantsir S1;NoSA15:true:SA-15"
 RedTemplateEnabled = {
     ["SA-2"] = true, -- eras=Modern|Coldwar|Vietnam; SA-2 [All]
@@ -203,7 +209,7 @@ RedTemplateEnabled = {
 
 -- AI aircraft templates used by missions that support config-driven template selection.
 -- Rows with a checkmark are available for AI spawning.
--- @gui label="RED CAP Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?"
+-- @gui label="RED CAP Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?" installPolicy="replaceTable"
 RedCapPlaneEnabled = {
     ["RED_MIG29S_CAP_R77x3_R27ET_R73x2"] = true, -- eras=Modern; MiG-29S Fox 3 CAP [Modern]
     ["RED_MIG29S_CAP_R77x2_R73x2_TANKSx3"] = true, -- eras=Modern; MiG-29S Fox 3 CAP [Modern]
@@ -212,8 +218,8 @@ RedCapPlaneEnabled = {
     ["RED_MIG31_CAP_R33x4_R40Tx2"] = true, -- eras=Modern; MiG-31 Fox 1 CAP [Modern]
     ["RED_MIRAGE_F1CE_CAP_S530Fx2_MAGIC2x2"] = true, -- eras=Modern|Coldwar; Mirage F1CE Fox 1 CAP [Modern/CW]
     ["RED_MIRAGE_F1CE_CAP_R530F_EMx2_MAGIC2x2"] = true, -- eras=Modern|Coldwar; Mirage F1CE Fox 1 CAP [Modern/CW]
-    ["RED_MIG29A_CAP_R73x6"] = true, -- eras=Modern|Coldwar; MiG-29A IR CAP [Modern/CW]
-    ["RED_MIG29A_CAP_R73x4_R27ER2X"] = true, -- eras=Modern|Coldwar; MiG-29A Fox 1 CAP [Modern/CW]
+    ["RED_MIG29A_CAP_R73x4_R27R2x"] = true, -- eras=Modern|Coldwar; MiG-29A R-27R Fox 1 CAP [Modern/CW]
+    ["RED_MIG29A_CAP_R73x4_R27ER2X"] = true, -- eras=Modern|Coldwar; MiG-29A R-27ER Fox 1 CAP [Modern/CW]
     ["RED_MIG25PD_CAP_R40Rx2_R60Mx2"] = true, --eras=Modern|Coldwar; MiG-25PD Fox 1 CAP [Modern/CW]
     ["RED_SU27_CAP_R27ERx5_R73x3_ECM"] = true, -- eras=Modern|Coldwar; Su-27 Fox 1 CAP [Modern/CW]
     ["RED_MIG23MLD_CAP_R24Rx2_R60Mx2"] = true, -- eras=Modern|Coldwar; MiG-23MLD Fox 1 CAP [Modern/CW]
@@ -225,11 +231,12 @@ RedCapPlaneEnabled = {
     ["RED_L39C_CAP_R3S2X"] = false, -- eras=Vietnam; L-39C Fox 2 CAP [VN]
 }
 
--- @gui label="BLUE CAP Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?"
+-- @gui label="BLUE CAP Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?" installPolicy="replaceTable"
 BlueCapPlaneEnabled = {
     ["BLUE_FA18C_CAP_AIM120Cx6_AIM9Xx2"] = true, -- eras=Modern; F/A-18C Fox 3 CAP [Modern]
     ["BLUE_F15C_CAP_AIM120Bx3_AIM120Cx5"] = true, -- eras=Modern; F-15C Fox 3 CAP [Modern]
     ["BLUE_F16C_CAP_AIM120Bx4_AIM120C_AIM9M"] = true, -- eras=Modern; F-16C Fox 3 CAP [Modern]
+    ["BLUE_F16_CAP_AIM120Cx5_AIM9Xx1"] = true, -- eras=Modern; 2x F-16C Fox 3 CAP [Modern]
     ["BLUE_F14B_CAP_AIM54A_MK47x4_AIM7Mx2_AIM9Mx2_TANKSx2"] = true, -- eras=Modern|Coldwar; F-14B AIM54A-MK47 [Modern/CW]
     ["BLUE_F14B_CAP_AIM54C_MK47x4_AIM7Mx2_AIM9Mx2_TANKSx2"] = true, -- eras=Modern|Coldwar; F-14B AIM54C-MK47 [Modern/CW]
     ["BLUE_F14B_CAP_AIM54C_MK60x4_AIM7Mx2_AIM9Mx2_TANKSx2"] = true, -- eras=Modern|Coldwar; F-14B AIM54C-MK60 [Modern/CW]
@@ -244,22 +251,22 @@ BlueCapPlaneEnabled = {
     ["BLUE_F86F_CAP_GAR8x2"] = false, -- eras=Vietnam; F-86F IR CAP [VN]
 }
 
--- @gui label="RED CAS Plane Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?"
+-- @gui label="RED CAS Plane Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?" installPolicy="replaceTable"
 RedCasPlaneEnabled = {
-    ["RED_SU25T_CAS_KH25MP_MPU_VIKHRx2_SPPUx2_1SHIP"] = true, -- eras=Modern; Su-25T CAS [Modern]
-    ["RED_SU25T_CAS_S25Lx6_B13x2_1SHIP"] = true, -- eras=Modern; Su-25T CAS [Modern]
-    ["RED_SU25T_CAS_VIKHRx2_S25Lx2_SPPUx2_1SHIP"] = true, -- eras=Modern; Su-25T CAS [Modern]
-    ["RED_SU25T_CAS_KH25MP_MPU_VIKHRx2_SPPUx2_2SHIP"] = true, -- eras=Modern; 2x Su-25T CAS [Modern]
-    ["RED_SU25T_CAS_S25Lx6_B13x2_2SHIP"] = true, -- eras=Modern; 2x Su-25T CAS [Modern]
-    ["RED_SU25T_CAS_VIKHRx2_S25Lx2_SPPUx2_2SHIP"] = true, -- eras=Modern; 2x Su-25T CAS [Modern]
+    ["RED_SU25T_CAS_KH25MPx2_VIKHRx2_KH29Tx2_1SHIP"] = true, -- eras=Modern; Su-25T CAS [Modern]
+    ["RED_SU25T_CAS_KH25MLx4_KH29Tx2_1SHIP"] = true, -- eras=Modern; Su-25T CAS [Modern]
+    ["RED_SU25T_CAS_VIKHRx2_FAB500M62x2_KH29Tx2_1SHIP"] = true, -- eras=Modern; Su-25T CAS [Modern]
+    ["RED_SU25T_CAS_KH25MPx2_VIKHRx2_KH29Tx2_2SHIP"] = true, -- eras=Modern; 2x Su-25T CAS [Modern]
+    ["RED_SU25T_CAS_KH25MLx4_KH29Tx2_2SHIP"] = true, -- eras=Modern; 2x Su-25T CAS [Modern]
+    ["RED_SU25T_CAS_VIKHRx2_FAB500M62x2_KH29Tx2_2SHIP"] = true, -- eras=Modern; 2x Su-25T CAS [Modern]
     ["RED_MIG21BIS_CAS_RBK250x2_UB32x2_1SHIP"] = true, -- eras=Modern; MiG-21bis CAS [Modern]
     ["RED_MIG21BIS_CAS_RBK250x2_UB32x2_2SHIP"] = true, -- eras=Modern; 2x MiG-21bis CAS [Modern]
-    ["RED_SU25_CAS_KH25ML_S25Lx2_RBK500x2_B8x2_SPPU_1SHIP"] = true, -- eras=Modern|Coldwar; Su-25 CAS [Modern/CW]
-    ["RED_SU25_CAS_FAB250x2_RBK250x2_B8x4_1SHIP"] = true, -- eras=Modern|Coldwar; Su-25 CAS [Modern/CW]
-    ["RED_SU25_CAS_S25Lx6_B13x2_1SHIP"] = true, -- eras=Modern|Coldwar; Su-25 CAS [Modern/CW]
-    ["RED_SU25_CAS_KH25ML_S25Lx2_RBK500x2_B8x2_SPPU_2SHIP"] = true, -- eras=Modern|Coldwar; 2x Su-25 CAS [Modern/CW]
-    ["RED_SU25_CAS_FAB250x2_RBK250x2_B8x4_2SHIP"] = true, -- eras=Modern|Coldwar; 2x Su-25 CAS [Modern/CW]
-    ["RED_SU25_CAS_S25Lx6_B13x2_1SHIP_DUPLICATE"] = true, -- eras=Modern|Coldwar; Su-25 CAS [Modern/CW]
+    ["RED_SU25_CAS_KH25ML_S25Lx2_FAB500M62x2_B8x2_SPPU_1SHIP"] = false, -- eras=Coldwar; Su-25 CAS [CW]
+    ["RED_SU25_CAS_FAB250x2_FAB500M62x2_B8x2_S24Bx2_1SHIP"] = false, -- eras=Coldwar; Su-25 CAS [CW]
+    ["RED_SU25_CAS_KH25MLx2_S25Lx2_FAB500M62x2_B13x2_1SHIP"] = false, -- eras=Coldwar; Su-25 CAS [CW]
+    ["RED_SU25_CAS_KH25ML_S25Lx2_FAB500M62x2_B8x2_SPPU_2SHIP"] = false, -- eras=Coldwar; 2x Su-25 CAS [CW]
+    ["RED_SU25_CAS_FAB250x2_FAB500M62x2_B8x2_S24Bx2_2SHIP"] = false, -- eras=Coldwar; 2x Su-25 CAS [CW]
+    ["RED_SU25_CAS_KH25MLx2_S25Lx2_FAB500M62x2_B13x2_2SHIP"] = false, -- eras=Coldwar; 2x Su-25 CAS [CW]
     ["RED_MIRAGE_F1BQ_CAS_SAMP400x2_SAMP250x2_2SHIP"] = true, -- eras=Modern|Coldwar; 2x Mirage F1BQ CAS [Modern/CW]
     ["RED_MIRAGE_F1BQ_CAS_MIXED_SNEB_SAMP_2SHIP"] = true, -- eras=Modern|Coldwar; 2x Mirage F1BQ CAS [Modern/CW]
     ["RED_MIG21BIS_CAS_S24Bx4_1SHIP"] = false, -- eras=Coldwar; MiG-21bis S-24B CAS [CW]
@@ -279,10 +286,11 @@ RedCasPlaneEnabled = {
 
 }
 
--- @gui label="BLUE CAS Plane Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?"
+-- @gui label="BLUE CAS Plane Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?" installPolicy="replaceTable"
 BlueCasPlaneEnabled = {
     ["BLUE_F4E_CAS_WALLEYEIIx2_GBU12x2_PAVESPIKE_2SHIP"] = true, -- eras=Modern|Coldwar; 2x F-4E Guided CAS [Modern/CW]
     ["BLUE_F4E_CAS_AGM65Dx6_GBU12x2_PAVESPIKE_2SHIP"] = true, -- eras=Modern|Coldwar; 2x F-4E Maverick CAS [Modern/CW]
+    ["BLUE_F16_CAS_AGM65Dx4_GBU12x2_PAVESPIKE_2SHIP"] = true, -- eras=Modern; 2x F-16C Maverick CAS [Modern]
     ["BLUE_F86F_CAS_AIM9Bx2_HVARx8_TANKSx2_2SHIP"] = false, -- eras=Coldwar; 2x F-86F Rocket CAS [CW]
     ["BLUE_F86F_CAS_AIM9Bx2_M117x2_2SHIP"] = false, -- eras=Coldwar; 2x F-86F M117 CAS [CW]
     ["BLUE_F4E_CAS_M117x12_AIM7E2x3_TANKSx2_ALQ131"] = false, -- eras=Vietnam|Coldwar; 2x F-4E M117 CAS [VN/CW]
@@ -295,7 +303,7 @@ BlueCasPlaneEnabled = {
     ["BLUE_F5E3_CAS_MK82SEx4_AIM9Bx2_TANK275_2SHIP"] = false, -- eras=Vietnam; 2x F-5E-3 Snakeye CAS [VN]
 }
 
--- @gui label="RED SEAD Plane Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?"
+-- @gui label="RED SEAD Plane Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?" installPolicy="replaceTable"
 RedSeadPlaneEnabled = {
     ["RED_JF17_SEAD_LD10x2_PL5EIIx2_SPJ_TANKSx2_1SHIP"] = true, -- eras=Modern; JF-17 SEAD [Modern]
     ["RED_JF17_SEAD_LD10x2_PL5EIIx2_SPJ_TANKSx2_2SHIP"] = true, -- eras=Modern; 2x JF-17 SEAD [Modern]
@@ -311,13 +319,16 @@ RedSeadPlaneEnabled = {
     ["RED_SU17M4_SEAD_KH25MRx4_R60x2_TANKSx2_2SHIP"] = false, -- eras=Vietnam|Coldwar; 2x Su-17M4 SEAD [CW/VN]
 }
 
--- @gui label="BLUE SEAD Plane Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?"
+-- @gui label="BLUE SEAD Plane Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?" installPolicy="replaceTable"
 BlueSeadPlaneEnabled = {
+    ["BLUE_F16_SEAD_AGM88Cx4_AIM120Cx2_AIM9Xx2"] = true, -- eras=Modern; 2x F-16C SEAD [Modern]
+    ["BLUE_F18_SEAD_AGM88Cx2_ADM141Ax6_AIM120Cx1_AIM9Xx2"] = true, -- eras=Modern; 2x F/A-18C SEAD [Modern]
+    ["BLUE_F18_SEAD_AGM88Cx2_AGM154CAx4_AIM120Cx1_AIM9Xx2"] = true, -- eras=Modern; 2x F/A-18C SEAD [Modern]
     ["BLUE_F4E_SEAD_AGM45Ax4_AIM7E2x3_TANK600_ALQ131"] = false, -- eras=Vietnam|Coldwar; 2x F-4E Shrike SEAD [VN/CW]
     ["BLUE_F100D_SEAD_AGM45Ax2_CBU7x2_TANKSx2_2SHIP"] = false, -- eras=Vietnam; 2x F-100D SEAD [VN]
 }
 
--- @gui label="RED Runway Strike Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?"
+-- @gui label="RED Runway Strike Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?" installPolicy="replaceTable"
 RedRunwayStrikePlaneEnabled = {
     ["RED_SU33_RUNWAY_BETAB500x4_R27ERx4_R73x2_3SHIP"] = true, -- eras=Modern; 3x Su-33 Runway [Modern]
     ["RED_MIG27K_RUNWAY_BETAB500x2_FAB250x2_R60Mx4_3SHIP"] = true, -- eras=Modern|Coldwar; 3x MiG-27K Runway [Modern/CW]
@@ -325,23 +336,31 @@ RedRunwayStrikePlaneEnabled = {
     ["RED_MIG21BIS_RUNWAY_BETAB500x2_R3Rx2_TANK490_3SHIP"] = false, -- eras=Vietnam; 3x MiG-21bis BetAB Runway [VN]
 }
 
--- @gui label="RED CAS Helo Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?"
+-- @gui label="RED Enemy Strike Plane Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?" installPolicy="replaceTable"
+RedEnemyStrikePlaneEnabled = {
+    ["evt-attack"] = true, -- eras=Modern; 3x Su-34 Enemy Strike (each: 4x Kh-29T, 2x Kh-31P, 2x R-27ER, 2x R-73, 2x L-175V ECM) [Modern]
+    ["evt-attackcw"] = true, -- eras=Modern|Coldwar; 3x Su-24M Enemy Strike (each: 2x Kh-25MPU, 2x KAB-500Kr, 2x R-60M, L-081 ELINT) [Modern/CW]
+}
+
+-- @gui label="RED CAS Helo Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?" installPolicy="replaceTable"
 RedCasHeloEnabled = {
     ["RED_MI24P_CAS_9M114x8_B8x2_1SHIP"] = true, -- eras=Modern; Mi-24P CAS [Modern]
     ["RED_MI24P_CAS_9M114x8_B8x2_2SHIP"] = true, -- eras=Modern; 2x Mi-24P CAS [Modern]
+    ["RED_MI24P_CAS_B13Lx2_B8x2_1SHIP"] = true, -- eras=Modern; Mi-24P B-13L/B-8 rocket CAS [Modern]
+    ["RED_MI24P_CAS_B13Lx2_B8x2_2SHIP"] = true, -- eras=Modern; 2x Mi-24P B-13L/B-8 rocket CAS [Modern]
     ["RED_MI28N_CAS_9M120x8_9M120Fx8_B13x2_1SHIP"] = true, -- eras=Modern; Mi-28N CAS [Modern]
     ["RED_MI28N_CAS_9M114x8_B8x2_1SHIP"] = true, -- eras=Modern; Mi-28N CAS [Modern]
     ["RED_MI28N_CAS_9M114x8_B8x2_2SHIP"] = true, -- eras=Modern; 2x Mi-28N CAS [Modern]
     ["RED_MI28N_CAS_9M120x8_9M120Fx8_B13x2_2SHIP"] = true, -- eras=Modern; 2x Mi-28N CAS [Modern]
-    ["RED_MI24V_CAS_B8x4_1SHIP"] = false, -- eras=Coldwar; Mi-24V CAS [CW]
-    ["RED_MI24V_CAS_B8x4_2SHIP"] = false, -- eras=Coldwar; 2x Mi-24V CAS [CW]
-    ["RED_MI8_CAS_FAB100x6_1SHIP"] = false, -- eras=Vietnam|Coldwar; Mi-8 FAB-100 CAS [VN/CW]
-    ["RED_MI8_CAS_FAB100x6_2SHIP"] = false, -- eras=Vietnam|Coldwar; 2x Mi-8 FAB-100 CAS [VN/CW]
+    ["RED_MI24V_CAS_B8x2_B13x2_1SHIP"] = false, -- eras=Coldwar; Mi-24V CAS [CW]
+    ["RED_MI24V_CAS_B8x2_B13x2_2SHIP"] = false, -- eras=Coldwar; 2x Mi-24V CAS [CW]
+    ["RED_MI8_CAS_FAB100x4_UPK23x2_KORD_PKT_1SHIP"] = false, -- eras=Vietnam|Coldwar; Mi-8 FAB-100/UPK-23 gunpod CAS [VN/CW]
+    ["RED_MI8_CAS_FAB100x4_UPK23x2_KORD_PKT_2SHIP"] = false, -- eras=Vietnam|Coldwar; 2x Mi-8 FAB-100/UPK-23 gunpod CAS [VN/CW]
     ["RED_MI8_CAS_GUV_YAKB_GSHPx2_KORD_PKT_1SHIP"] = false, -- eras=Vietnam|Coldwar; Mi-8 gunpod CAS [VN/CW]
     ["RED_MI8_CAS_GUV_YAKB_GSHPx2_KORD_PKT_2SHIP"] = false, -- eras=Vietnam|Coldwar; 2x Mi-8 gunpod CAS [VN/CW]
 }
 
--- @gui label="BLUE CAS Helo Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?"
+-- @gui label="BLUE CAS Helo Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?" installPolicy="replaceTable"
 BlueCasHeloEnabled = {
     ["BLUE_AH64D_CAS_AGM114Kx4_AGM114Lx4_M261x2_FCR_1SHIP"] = true, -- eras=Modern; AH-64D CAS [Modern]
     ["BLUE_AH64D_CAS_AGM114Kx4_AGM114Lx4_M261x2_FCR_2SHIP"] = true, -- eras=Modern; 2x AH-64D CAS [Modern]
@@ -356,18 +375,16 @@ BlueCasHeloEnabled = {
     ["BLUE_UH1H_CAS_XM158x2_M134x3_M60_2SHIP"] = false, -- eras=Coldwar|Vietnam; 2x UH-1H CAS [CW/VN]
 }
 
--- @gui label="RED Supply Helo Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?"
+-- @gui label="RED Supply Helo Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?" installPolicy="replaceTable"
 RedSupplyHeloEnabled = {
     ["RED_MI8_SUPPLY_KORD"] = true, -- eras=Modern|Coldwar|Vietnam; Mi-8 Supply [All]
     ["RED_MI8_SUPPLY_KORD_PKT"] = true, -- eras=Modern|Coldwar|Vietnam; Mi-8 Supply [All]
 }
 
--- @gui label="BLUE Supply Helo Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?"
+-- @gui label="BLUE Supply Helo Templates" editor="checkboxTable" rowLabel="comment" confirmSetRowsByEra="Select aircraft templates based on Era?" installPolicy="replaceTable"
 BlueSupplyHeloEnabled = {
-	["BLUE_CH47_SUPPLY_M240Hx2"] = true, -- eras=Modern|Coldwar; CH-47 Supply [Modern/CW]
-	["BLUE_CH47_SUPPLY_M60Dx3"] = true, -- eras=Modern|Coldwar; CH-47 Supply [Modern/CW]
-    ["BLUE_UH60A_SUPPLY_UNARMED"] = true, -- eras=Modern|Coldwar; UH-60A Supply [Modern/CW]
-    ["BLUE_UH1H_SUPPLY_UNARMED"] = false, -- eras=Coldwar|Vietnam; UH-1H Supply [CW/VN]
+	["BLUE_CH47_SUPPLY_M240Hx2"] = true, -- eras=Modern|Coldwar|Vietnam; CH-47 Supply [All]
+	["BLUE_CH47_SUPPLY_M60Dx3"] = true, -- eras=Modern|Coldwar|Vietnam; CH-47 Supply [All]
 }
 
 -- ============================================================================
@@ -396,6 +413,17 @@ end
 -- ONLY VALID ON CAUCASUS, PERSIAN GULF, SYRIA AND AFGHANISTAN.
 -- if false, the mission will start from the other end. Carrier zone will be disabled.
 StartNormal = true
+
+-- SYRIA ONLY.
+-- If true while StartNormal is true, the campaign starts from Incirlik instead of Akrotiri.
+-- @gui label="Start From Incirlik" disabledWhen="StartNormal:false"
+StartFromIncirlik = false
+
+-- SYRIA ONLY.
+-- If true, removes the southern Syria zones from the campaign.
+-- Current campaign progress is kept. If later set to false, the southern zones return using their default setup state.
+-- @gui label="Remove Southern Syria"
+RemoveSouthSyria = false
  
 -- When the mission is completed, if you want the server to restart automatically and reset everything, then set this to true.
 -- If false, you will have a menu where you can choose to restart the mission. 
@@ -417,7 +445,7 @@ PVE_Only = false -- If true, players can not spawn in red coalition zones.
 -- (not compatible with Coldwar/Gulfwar).
 -- Keep in mind, adding mods midsession, while there is a save file, those weapons will not be added to current saved airbases.
 -- this will be filled through time, from the AutoFillResources.
-AllowMods = false -- Should NOT be used with coldwar era.
+AllowMods = false -- Should NOT be used with the Coldwar or Gulfwar era.
 
 -- If true, when players die their coalition loses 100 credits per death.
 CreditLosewhenKilled = false
@@ -517,6 +545,16 @@ ChanceAiAttackHelo = 0
 -- Hunter is when you do a lot of damage to enemy units (both planes and ground), RED dispatches a 2-ship to hunt you down.
 EnableHunter = true
 
+-- Lets the Director remember recent RED sortie and regular-supply outcomes and use them as soft planning influences.
+-- This does not add groups, force launches, bypass cooldowns, or block a route.
+-- @gui label="Director Battlefield Intelligence"
+GlobalSettings.directorBattlefieldIntelligenceEnabled = true
+
+-- Lets the Director remember recent air-combat results and use them as a small influence when redirecting an existing RED CAP.
+-- This does not add aircraft or bypass normal CAP limits, cooldowns, or safety checks.
+-- @gui label="Director Air-Combat Intelligence"
+GlobalSettings.directorAirCombatIntelligenceEnabled = true
+
 -- Valid values: "easy" | "medium" | "hard"
 -- Here, you can adjust how many cap should spawn. medium, is the default (Balanaced)
 CapDifficulty           = "medium" -- RED CAP amount.  This can be further custommized in the advance section.
@@ -540,28 +578,28 @@ RedReactiveDifficulty   = "medium" -- RED reactive counterpressure difficulty.
 -- @gui installPolicy="keepTable"
 CapLimitStages = {
 	easy = {
-		{ player = 0,   amount = 0 },
-		{ player = 1,   amount = 1 },
-		{ player = 2,   amount = 1 },
-		{ player = 3,   amount = 2 },
-		{ player = 4,   amount = 3 },
-		{ player = 6,   amount = 4 },
-		{ player = 10,  amount = 5 },
+		{ player = 0, amount = 0 },
+		{ player = 1, amount = 1 },
+		{ player = 2, amount = 1 },
+		{ player = 3, amount = 2 },
+		{ player = 4, amount = 3 },
+		{ player = 6, amount = 4 },
+		{ player = 10, amount = 5 },
 		{ player = 999, amount = 6 },
 	},
 	medium = {
-		{ player = 0,   amount = 1 },
-		{ player = 1,   amount = 1 },
+		{ player = 0, amount = 1 },
+		{ player = 1, amount = 1 },
 		{ player = 2, amount = 1 },
 		{ player = 3, amount = 2 },
 		{ player = 4, amount = 2 },
 		{ player = 5, amount = 3 },
 		{ player = 9, amount = 4 },
-		{ player = 10,  amount = 6 },
+		{ player = 10, amount = 6 },
 		{ player = 999, amount = 7 },
 	},
 	hard = {
-		{ player = 0,   amount = 1 },
+		{ player = 0, amount = 1 },
 		{ player = 1, amount = 1 },
 		{ player = 2, amount = 2 },
 		{ player = 3, amount = 3 },
@@ -581,32 +619,32 @@ CapLimitStages = {
 -- @gui installPolicy="keepTable"
 RedCasLimitStages = {
 	easy = {
-		{ player = 0,   amount = 0 },
-		{ player = 1,   amount = 0 },
-		{ player = 2,   amount = 1 },
-		{ player = 3,   amount = 1 },
-		{ player = 4,   amount = 2 },
-		{ player = 5,   amount = 2 },
+		{ player = 0, amount = 0 },
+		{ player = 1, amount = 0 },
+		{ player = 2, amount = 1 },
+		{ player = 3, amount = 1 },
+		{ player = 4, amount = 2 },
+		{ player = 5, amount = 2 },
 		{ player = 999, amount = 3 },
 	},
 	medium = {
-		{ player = 0,   amount = 1 },
-		{ player = 1,   amount = 1 },
+		{ player = 0, amount = 1 },
+		{ player = 1, amount = 1 },
 		{ player = 2, amount = 1 },
-		{ player = 3,   amount = 2 },
+		{ player = 3, amount = 2 },
 		{ player = 4, amount = 2 },
-		{ player = 5,   amount = 3 },
+		{ player = 5, amount = 3 },
 		{ player = 9, amount = 3 },
 		{ player = 999, amount = 4 },
 	},
 	hard = {
-		{ player = 0,   amount = 1 },
+		{ player = 0, amount = 1 },
 		{ player = 1, amount = 1 },
-		{ player = 2,   amount = 2 },
-		{ player = 3,   amount = 3 },
-		{ player = 4,   amount = 4 },
-		{ player = 5,   amount = 4 },
-		{ player = 9,   amount = 6 },
+		{ player = 2, amount = 2 },
+		{ player = 3, amount = 3 },
+		{ player = 4, amount = 4 },
+		{ player = 5, amount = 4 },
+		{ player = 9, amount = 6 },
 		{ player = 999, amount = 7 },
 	},
 }
@@ -619,18 +657,18 @@ RedCasLimitStages = {
 -- @gui installPolicy="keepTable"
 RedSeadLimitStages = {
 	easy = {
-		{ player = 0,   amount = 0 },
-		{ player = 1,   amount = 0 },
-		{ player = 2,   amount = 1 },
-		{ player = 3,   amount = 1 },
-		{ player = 4,   amount = 2 },
-		{ player = 5,   amount = 2 },
+		{ player = 0, amount = 0 },
+		{ player = 1, amount = 0 },
+		{ player = 2, amount = 1 },
+		{ player = 3, amount = 1 },
+		{ player = 4, amount = 2 },
+		{ player = 5, amount = 2 },
 		{ player = 999, amount = 3 },
 	},
 	medium = {
 		{ player = 0, amount = 1 },
-		{ player = 1,   amount = 1 },
-		{ player = 2,   amount = 1 },
+		{ player = 1, amount = 1 },
+		{ player = 2, amount = 1 },
 		{ player = 3, amount = 1 },
 		{ player = 4, amount = 2 },
 		{ player = 5, amount = 2 },
@@ -638,13 +676,13 @@ RedSeadLimitStages = {
 		{ player = 999, amount = 4 },
 	},
 	hard = {
-		{ player = 0,   amount = 1 },
+		{ player = 0, amount = 1 },
 		{ player = 1, amount = 1 },
 		{ player = 2, amount = 1 },
 		{ player = 3, amount = 2 },
 		{ player = 4, amount = 3 },
 		{ player = 5, amount = 3 },
-		{ player = 9,   amount = 6 },
+		{ player = 9, amount = 6 },
 		{ player = 999, amount = 7 },
 	},
 }
@@ -657,32 +695,32 @@ RedSeadLimitStages = {
 -- @gui installPolicy="keepTable"
 RedRunwayStrikeLimitStages = {
 	easy = {
-		{ player = 0,   amount = 0 },
-		{ player = 1,   amount = 0 },
-		{ player = 2,   amount = 1 },
-		{ player = 3,   amount = 1 },
-		{ player = 4,   amount = 2 },
-		{ player = 5,   amount = 2 },
+		{ player = 0, amount = 0 },
+		{ player = 1, amount = 0 },
+		{ player = 2, amount = 1 },
+		{ player = 3, amount = 1 },
+		{ player = 4, amount = 2 },
+		{ player = 5, amount = 2 },
 		{ player = 999, amount = 3 },
 	},
 	medium = {
-		{ player = 0,   amount = 0 },
-		{ player = 1,   amount = 0 },
-		{ player = 2,   amount = 1 },
+		{ player = 0, amount = 0 },
+		{ player = 1, amount = 1 },
+		{ player = 2, amount = 1 },
 		{ player = 3, amount = 1 },
 		{ player = 4, amount = 2 },
-		{ player = 5,   amount = 3 },
-		{ player = 9,   amount = 4 },
+		{ player = 5, amount = 3 },
+		{ player = 9, amount = 4 },
 		{ player = 999, amount = 4 },
 	},
 	hard = {
-		{ player = 0,   amount = 0 },
-		{ player = 1,   amount = 1 },
-		{ player = 2,   amount = 2 },
-		{ player = 3,   amount = 3 },
-		{ player = 4,   amount = 4 },
-		{ player = 5,   amount = 4 },
-		{ player = 9,   amount = 6 },
+		{ player = 0, amount = 0 },
+		{ player = 1, amount = 1 },
+		{ player = 2, amount = 2 },
+		{ player = 3, amount = 3 },
+		{ player = 4, amount = 4 },
+		{ player = 5, amount = 4 },
+		{ player = 9, amount = 6 },
 		{ player = 999, amount = 7 },
 	},
 }
@@ -695,13 +733,13 @@ RedRunwayStrikeLimitStages = {
 -- @gui installPolicy="keepTable"
 BlueCapSupportStages = {
 	easy = {
-		{ player = 0,   amount = 2 },
-		{ player = 1,   amount = 2 },
+		{ player = 0, amount = 2 },
+		{ player = 1, amount = 2 },
 		{ player = 999, amount = 1 },
 	},
 	medium = {
-		{ player = 0,    amount = 1 },
-		{ player = 1,    amount = 1 },
+		{ player = 0, amount = 1 },
+		{ player = 1, amount = 1 },
 		{ player = 1000, amount = 0 },
 	},
 	hard = {
@@ -716,13 +754,13 @@ BlueCapSupportStages = {
 -- @gui installPolicy="keepTable"
 BlueCasSupportStages = {
 	easy = {
-		{ player = 0,   amount = 2 },
-		{ player = 1,   amount = 2 },
+		{ player = 0, amount = 2 },
+		{ player = 1, amount = 2 },
 		{ player = 999, amount = 1 },
 	},
 	medium = {
-		{ player = 0,   amount = 1 },
-		{ player = 1,   amount = 1 },
+		{ player = 0, amount = 1 },
+		{ player = 1, amount = 1 },
 		{ player = 999, amount = 0 },
 	},
 	hard = {
@@ -737,13 +775,13 @@ BlueCasSupportStages = {
 -- @gui installPolicy="keepTable"
 BlueSeadSupportStages = {
 	easy = {
-		{ player = 0,   amount = 2 },
-		{ player = 1,   amount = 2 },
+		{ player = 0, amount = 2 },
+		{ player = 1, amount = 2 },
 		{ player = 999, amount = 1 },
 	},
 	medium = {
-		{ player = 0,   amount = 1 },
-		{ player = 1,   amount = 1 },
+		{ player = 0, amount = 1 },
+		{ player = 1, amount = 1 },
 		{ player = 999, amount = 0 },
 	},
 	hard = {
@@ -881,9 +919,9 @@ CallsignOverrides = {
 
 -- Choose to have the option to get escorted by 2 jets. Recommended to A10 / C-130J, Harrier.
 -- set to true for escort option available once spawned, false for no escort option.
--- escortType: 1 = Hornet (F-18C in Coldwar with AIM-7),
---             2 = Viper (F-15C in Coldwar with AIM-7)
---             3 = MIG29S with R-77 (MiG-29A in Coldwar with R-27ET)
+-- escortType: 1 = Hornet (F-18C in Coldwar or Gulfwar with AIM-7),
+--             2 = Viper (F-15C in Coldwar or Gulfwar with AIM-7)
+--             3 = MIG29S with R-77 (MiG-29A in Coldwar or Gulfwar with R-27ET)
 -- The third value is how many feet above the player the escort follows.
 -- Use 0 for the same altitude, or 1000 through 10000 in 1000-foot steps.
 -- @gui installPolicy="mergeRows"
@@ -918,6 +956,26 @@ EscortTakeoffFromGround = true -- If true, the escort will takeoff from the grou
 -- Neutral zones start without weapons; you must bring them or wait for AI delivery.
 WarehouseLogistics = true
 
+-- How many seconds a neutral-zone capture takes after a valid delivery arrives.
+-- Set to 0 to capture immediately.
+-- @gui label="Neutral Zone Capture Time" editor="seconds"
+ZoneCaptureBuildSeconds = 120
+
+-- How many ready supplies a normal zone produces before automatic production pauses.
+-- Player-delivered supplies can still be stored above this amount.
+-- @gui label="Normal Zone Supply Capacity" validValues="1=1 | 2=2 | 3=3"
+NormalSupplyCapacity = 1
+
+-- How many ready supplies a [WH] zone produces before automatic production pauses.
+-- Player-delivered supplies can still be stored above this amount.
+-- @gui label="Warehouse Supply Capacity" validValues="3=3 | 4=4 | 5=5 | 6=6"
+WarehouseSupplyCapacity = 6
+
+-- How many supplies a newly created CTLD FARP starts with.
+-- Player-delivered supplies can still be stored above this amount.
+-- @gui label="CTLD FARP Starting Supplies" validValues="1=1 | 2=2 | 3=3"
+CTLDSupplyCapacity = 1
+
 -- Supply mission and ready-supply production speed scaling.
 -- This multiplier affects AI supply mission timers and ready-supply production times.
 -- 1.0 = normal speed
@@ -929,8 +987,26 @@ WarehouseLogistics = true
 -- @gui label="Supply Speed Scaling" editor="sideMultiplier" min="0.10" max="5.00" step="0.05" timePreviewRed="Normal zone:1200" timePreviewBlue="Normal zone:1200 | [WH]:600"
 GlobalSettings.supplyDifficultyScaling = { [1]=1.0, [2]=1.0 }
 
--- Time in seconds for zones to repair or upgrade its own zone using one ready supply.
-ZoneSelfRepairAndUpgradeTime = 300
+-- Scales repair, rebuild, and installation time after supplies are available.
+-- 0.5 = twice as fast
+-- 1.0 = normal speed
+-- 1.5 = 50% slower
+--
+-- Red normal speed: 1 minute per unit, 3 minutes per SR/TR/STR, maximum 20 minutes.
+-- Blue normal speed: 15 minute normal-zone base or 5 minute [WH] base + 2 minutes per unit or 3 minutes per SR/TR/STR, maximum 20 minutes.
+-- Blue has a base time because Blue zones consume supplies directly from their own storage.
+-- Red has no base time here because Red must first wait for supplies delivered from another zone.
+-- Player, CTLD, airdropped, zsup3, and supplies2 supplies skip the Blue base time.
+-- Supply production, dispatch, and travel times are not changed by this setting.
+-- @gui label="Repair Time Scaling" editor="sideMultiplier" min="0.10" max="5.00" step="0.05" timePreviewRed="Unit:60 | SR/TR/STR:180 | Maximum:1200" timePreviewBlue="Normal base:900 | [WH] base:300 | Expedited base:0 | Unit:120 | SR/TR/STR:180 | Maximum:1200"
+GlobalSettings.repairDifficultyScaling = { [1]=1, [2]=1 }
+
+-- Extra time for Red repairs and construction when fewer than 2 eligible Blue CAS players are present.
+-- Uses the cached CAS player list, excluding BlueCasCountIgnoreTypes, once when the job starts.
+-- Adds to the scaled starting duration; later damage-driven timer updates remain unchanged.
+-- 0 disables the extra time (default). Maximum 50% extra time. Blue and supply travel times are unchanged.
+-- @gui label="Extra Red Repair Time — Low Player Count %" validValues="Disabled=0 | 5%=5 | 10%=10 | 15%=15 | 20%=20 | 25%=25 | 30%=30 | 35%=35 | 40%=40 | 45%=45 | 50%=50"
+ExtraRedRepairTimeLowPlayerCountPercent = 0
 
 -- If true, player-picked Zone supplies consume one ready supply package from the campaign zone.
 -- Returned or removed cargo restores that package; destroyed or delivered cargo does not.
@@ -1026,6 +1102,11 @@ WarehouseWeaponCaps = {
 -- Shop / Rewards
 -- ============================================================================
 
+-- Get extra reward if player keeps the same aircraft after a successful credits redeem and then another sortie with another credits redeem.
+-- Percentage of extra credits. 0 disables the reward, 10 is the default, and 50 is the maximum.
+-- @gui label="Same Aircraft Extra Reward %" validValues="Disabled=0 | 5%=5 | 10%=10 | 15%=15 | 20%=20 | 25%=25 | 30%=30 | 35%=35 | 40%=40 | 45%=45 | 50%=50"
+TurnaroundRewardPercent = 10
+
 -- Advance Capture becomes available when an enemy zone has this percent or less of its upgrade groups remaining.
 -- Percent of upgrade groups remaining before Advance Capture appears.
 -- This makes the capture of a zone quicker as the supply takes off prior.
@@ -1059,12 +1140,22 @@ ShopPrices = {
 	artillery     = 100,  -- Deploy artillery
 	recon         = 50,   -- Deploy recon group
 	airdef        = 150,  -- Deploy air defence
+	calav         = 100,  -- Deploy LAV-25 group
+	camgs         = 100,  -- Deploy M1128 MGS group
+	cadragoon     = 100,  -- Deploy M1296 Dragoon group
 	capture       = 500,  -- Capture neutral zone
 	advancecapture = 500, -- Advance capture pressured enemy zone
 	intel         = 150,  -- Satellite Intel (60 min)
 	zinf          = 500,  -- Add infantry squad to zone
-	zsam          = 2000, -- Add Hawk/Nasams system to a zone
-	zlogc         = 2000, -- Make a zone logistic center
+	zhawk         = 2000, -- HAWK zone upgrade
+	zavenger      = 1000, -- Avenger zone upgrade
+	zroland       = 1000, -- Roland zone upgrade
+	zgepard       = 750, -- Gepard zone upgrade
+	zvulcan       = 500, -- Vulcan zone upgrade
+	zcram         = 1500, -- C-RAM zone upgrade
+	zsam          = 2000, -- Add NASAMS system to a zone
+	zlogc         = 5000, -- Make a zone logistic center
+	zwhrepair     = 2000, -- Repair warehouse building (30 minutes)
 	zsup3         = 750,  -- Add 3 supplies to a zone
 	zwh50         = 500,  -- Resupply warehouse with 50
 	zarm          = 1000, -- Add armor group to a zone
@@ -1100,7 +1191,13 @@ ShopRankRequirements = {
 	supplies       = 6,  -- Fully Upgrade Friendly Zone
 	zinf           = 5,  -- Add infantry squad to zone
 	zarm           = 7,  -- Add armor group to a zone
-	zsam           = 6,  -- Add Hawk/Nasams system to a zone
+	zhawk         = 6, -- HAWK zone upgrade
+	zavenger      = 5, -- Avenger zone upgrade
+	zroland       = 5, -- Roland zone upgrade
+	zgepard       = 4, -- Gepard zone upgrade
+	zvulcan       = 3, -- Vulcan zone upgrade
+	zcram         = 6, -- C-RAM zone upgrade
+	zsam          = 6,  -- Add NASAMS system to a zone
 	zlogc          = 1,  -- Make a zone logistic center
 	zsup3          = 2,  -- Add 3 supplies to a zone
 	zwh50          = 2,  -- Resupply warehouse with 50
@@ -1111,6 +1208,9 @@ ShopRankRequirements = {
 	artillery      = 3,  -- Deploy artillery
 	recon          = 3,  -- Deploy recon group
 	airdef         = 3,  -- Deploy air defence
+	calav          = 3,  -- Deploy LAV-25 group
+	camgs          = 3,  -- Deploy M1128 MGS group
+	cadragoon      = 3,  -- Deploy M1296 Dragoon group
 	["9lineam"]    = 1,  -- Jtac 9line AM
 	["9linefm"]    = 1,  -- Jtac 9line FM
 	cruisemsl      = 10, -- Cruise Missile Strike -- This does not exist in some maps.
@@ -1118,17 +1218,20 @@ ShopRankRequirements = {
     zhimars        = 8,  -- Add HIMARS to a zone
 }
 
--- Earning per kill by target type.
+-- Earnings per target/event. Enemy pilot capture pays on delivery to a friendly zone.
 -- @gui installPolicy="mergeRows"
 RewardContribution = {
 	infantry         = 10,
 	ground           = 10,
+	ctldGround       = 10, -- CTLD Units built by player reward Ground kill
+	ctldAir          = 20, -- CTLD Units built by player reward Air kill
 	sam              = 30,
 	airplane         = 50,
 	ship             = 200,
 	helicopter       = 50,
 	crate            = 100,
 	rescue           = 200,
+	enemyPilotCapture = 200, -- Per enemy pilot delivered; 0 disables capture credits, not Intel or statistics.
     structure        = 100,
 	["Zone upgrade"] = 100,
 	["Zone capture"] = 200,
@@ -1161,6 +1264,10 @@ CTLDCost = true
  -- If true, Red side can use CTLD on a basic level.
 Allow_Red_CTLD = false
 
+-- Maximum distance in meters that unloaded CTLD troops can run toward a zone.
+-- Use a value between 2000 and 15000.
+MaxTroopsRunDistanceTowardZone = 5000
+
 -- This is the prices for each CTLD unit and their required rank. Rank 1 is the lowest.
 -- @gui installPolicy="mergeRows"
 CTLDPrices = {
@@ -1170,6 +1277,8 @@ CTLDPrices = {
   ["Platoon 32"]             = { price = 200, reqRank = 1 },
   ["Anti-Air Soldiers"]      = { price = 100, reqRank = 1 },
   ["Mortar Squad"]           = { price = 100, reqRank = 1 },
+  ["Zone Spy"]               = { price = 100, reqRank = 2 },
+  ["Demolition Team"]        = { price = 100, reqRank = 2 },
   ["Mephisto"]               = { price = 250, reqRank = 2 },
   ["Humvee"]                 = { price = 250, reqRank = 1 },
   ["Bradly"]                 = { price = 250, reqRank = 1 },
@@ -1214,6 +1323,8 @@ MAX_AT_SPAWN = {
     ["Platoon 32"]              = 0,
     ["Anti-Air Soldiers"]       = 2,
     ["Mortar Squad"]            = 2,
+    ["Zone Spy"]                = 0,
+    ["Demolition Team"]         = 0,
     ["Linebacker"]              = 2,
     ["Vulcan"]                  = 2,
     ["HAWK System"]             = 3,
@@ -1405,6 +1516,9 @@ ArcoSpeed = 286 -- orbit speed for arco is hardcoded at 280, otherwise strange t
 -- EWRS
 -- ============================================================================
 
+-- @gui label="Enable EWRS" validValues="Enabled=true | Disabled=false"
+ewrs_enabled = true -- Enable EWRS reports and F10 menus. Requires mission restart; load the config before EWRS.lua.
+
 -- @gui validValues="Style 1=1 | Style 2=2"
 ewrs_defaultReportStyle = 2 -- Default EWRS report format. Style 1 keeps the current format. Style 2 uses compact separator lines. Players can change this via the F10 EWRS menu.
 
@@ -1473,8 +1587,8 @@ phaseCycleTimerIdle = 0.5      -- Relaxed cadence when idle. Raise to 0.8-1.0 if
 -- Aircraft / Weapons
 -- ============================================================================
 
--- In this list, you can either remove or add what is allowed in the coldwar era.
--- @gui label="Allowed Aircraft" installPolicy="mergeRows" editor="bucket" visibleWhen="Era:Coldwar"
+-- In this list, you can either remove or add what is allowed in the Coldwar or Gulfwar era.
+-- @gui label="Allowed Aircraft" installPolicy="mergeRows" newItemPolicy="commentWhenVisible" editor="bucket" visibleWhen="Era:Coldwar|Gulfwar"
 allowedPlanes = {
     "A-10A",
     "A-10C",
@@ -1568,12 +1682,11 @@ allowedPlanes = {
     "UH-60L_DAP",
 }
 
--- In this list, you can either remove or add what is allowed for the (RED SIDE) in the coldwar era.
--- @gui label="Allowed RED Aircraft" installPolicy="mergeRows" editor="bucket" visibleWhen="Era:Coldwar"
+-- In this list, you can either remove or add what is allowed for the (RED SIDE) in the Coldwar or Gulfwar era.
+-- @gui label="Allowed RED Aircraft" installPolicy="mergeRows" newItemPolicy="commentWhenVisible" editor="bucket" visibleWhen="Era:Coldwar|Gulfwar"
 allowedPlanesRed = {
     "A-10A",
     "A-10C",
-    "A-10C_2",
     "A-4E-C",
     "AH-1W",
     "AH-64D_BLK_II",
@@ -1585,18 +1698,15 @@ allowedPlanesRed = {
     "C-101CC",
     "C-130J-30",
     "CH-47Fbl1",
-    "E-2C",
     "F-100D",
-    "F-14A",
     "F-14A-135-GR",
     "F-14A-135-GR-Early",
     "F-14A-95-GR",
     --"F-14B",
     --"F-14BU",
+    --"A-10C_2",
     "F-15C",
-    "F-15E",
     "F-15ESE",
-    "F-16A MLU",
     "F-16C_50",
     "F-4E-45MC",
     "F-5E-3",
@@ -1604,7 +1714,6 @@ allowedPlanesRed = {
     "F-86F Sabre",
     "FA-18C_hornet",
     "Hercules",
-    "Ka-27",
     "L-39C",
     "M-2000C",
     "MB-339A",
@@ -1612,8 +1721,6 @@ allowedPlanesRed = {
     "MH-60R",
     "MH-6J",
     "Mi-24P",
-    "Mi-24V",
-    "Mi-28NE",
     "Mi-8MT",
     "MiG-15bis",
     "MiG-15bis_FC",
@@ -1654,16 +1761,17 @@ allowedPlanesRed = {
     "SA342Minigun",
     "SA342Mistral",
     "SU22",
-    "Su-24MR",
     "Su-25",
     "UH-1H",
     "UH-60A",
     "UH-60L",
     "UH-60L_DAP",
+    --"Ka-50_3",
+    --"Ka-50",
 }
 
 -- In this list, you can either remove or add what is allowed for BLUE warehouses in the Vietnam era.
--- @gui label="Vietnam Allowed Aircraft" installPolicy="mergeRows" editor="bucket" visibleWhen="Era:Vietnam"
+-- @gui label="Vietnam Allowed Aircraft" installPolicy="mergeRows" newItemPolicy="commentWhenVisible" editor="bucket" visibleWhen="Era:Vietnam"
 allowedPlanesVietnam = {
     "A-4E-C",
     "Bronco-OV-10A",
@@ -1693,7 +1801,7 @@ allowedPlanesVietnam = {
 }
 
 -- In this list, you can either remove or add what is allowed for RED warehouses in the Vietnam era.
--- @gui label="Vietnam Allowed RED Aircraft" installPolicy="mergeRows" editor="bucket" visibleWhen="Era:Vietnam"
+-- @gui label="Vietnam Allowed RED Aircraft" installPolicy="mergeRows" newItemPolicy="commentWhenVisible" editor="bucket" visibleWhen="Era:Vietnam"
 allowedPlanesRedVietnam = {
     "Mi-8MT",
     "MiG-15bis",
@@ -1758,9 +1866,9 @@ restockAircraft = {
     "T-45",
 }
 
--- In the coldwar era, you can add or remove what to restrict
+-- In the Coldwar or Gulfwar era, you can add or remove what to restrict
 -- Add "--" if you want to ALLOW a weapon, otherwise the weapon in the list below are removed from the warehouse.
--- @gui label="Cold War Restricted Weapons" installPolicy="mergeRows" editor="bucket" visibleWhen="Era:Coldwar"
+-- @gui label="Cold War / Gulf War Restricted Weapons" installPolicy="mergeRows" newItemPolicy="commentWhenVisible" editor="bucket" visibleWhen="Era:Coldwar|Gulfwar"
 restrictedWeapons = {
     -- Apache Radar
     "weapons.containers.ah-64d_radar",
@@ -1826,7 +1934,6 @@ restrictedWeapons = {
     "weapons.missiles.YJ-83",
     "weapons.containers.ALQ-184",
     "weapons.containers.alq-184long",
-    -- "weapons.containers.AN_ASQ_228",
     "weapons.missiles.AGM_114L",
     "weapons.missiles.AGM_114",
     -- "weapons.missiles.AGM_114K",
@@ -1849,12 +1956,16 @@ restrictedWeapons = {
     "weapons.bombs.KAB_1500T",
     "weapons.bombs.LS_6_100",
     "weapons.bombs.GBU-43/B(MOAB)",
+    -- "weapons.containers.AN_ASQ_228",
+    -- "weapons.containers.AAQ-28_LITENING",
+    -- "weapons.containers.AN_AAQ_33",
+    
 	"weapons.missiles.AGR_20A", -- laser rockets
 	"weapons.missiles.AGR_20_M282"} -- laser rockets
 
 -- In the Vietnam era, you can add or remove what to restrict.
 -- Add "--" if you want to ALLOW a weapon, otherwise weapons in the list below are removed from the warehouse.
--- @gui label="Vietnam Restricted Weapons" installPolicy="mergeRows" editor="bucket" visibleWhen="Era:Vietnam"
+-- @gui label="Vietnam Restricted Weapons" installPolicy="mergeRows" newItemPolicy="commentWhenVisible" editor="bucket" visibleWhen="Era:Vietnam"
 restrictedWeaponsVietnam = {
     -- Guided weapon pods
     --"weapons.containers.HB_ORD_Pave_Spike",
@@ -1934,7 +2045,7 @@ restrictedWeaponsVietnam = {
 }
 
 -- This list can be used to add weapons you want to forbidd, This will forbidd all in the table in Modern era as well.
--- For coldwar, you can still rely on restrictedWeapons.
+-- For Coldwar or Gulfwar, you can still rely on restrictedWeapons.
 -- @gui label="Forbidden Weapons All Eras" editor="bucket"
 ForbiddWeaponsInAllEra = {
     "weapons.bombs.RN-24", -- Nukes for the Mig-21

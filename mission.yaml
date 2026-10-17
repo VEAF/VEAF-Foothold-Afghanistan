@@ -22,15 +22,16 @@ custom_scripts:
     - path: src/scripts/Moose.lua
     - path: src/scripts/Foothold_Localization.lua
     - path: "src/scripts/Foothold Config.lua"
-    - path: src/scripts/zoneCommander.lua
+    - path: src/scripts/zoneCommanderv2.lua
+    - path: src/scripts/EWRS.lua
     - path: src/scripts/AF_SETUP.lua
     - path: src/scripts/WelcomeMessage.lua
     - path: src/scripts/Zeus.lua
-    - path: src/scripts/EWRS.lua
     - path: "src/scripts/Foothold CTLD.lua"
     - path: src/scripts/Foothold_CTLD_Red.lua
     - path: src/scripts/Splash_Damage.lua
     - path: src/scripts/AIEN.lua
+      delay_seconds: 15
 
 # Native load triggers detected in the source .miz. The build removes these
 # so the scripts above are not loaded twice.
@@ -78,7 +79,6 @@ modules:
   ctld: false
   aien: false
   csar: false
-  hercules: false
   skynet: false
   tum: false
 

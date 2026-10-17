@@ -46,6 +46,9 @@
       - Added C-101CC
 ]]
 
+if ewrs_enabled == false then return end -- Startup-only switch; requires mission restart.
+
+if ewrs and ewrs.radarRegistry then ewrs.closeRadarRegistry() end
 ewrs = {} --DO NOT REMOVE
 local L10N = FH_L10N
 ewrs.HELO = 1
@@ -137,6 +140,7 @@ ewrs.specialPlaneTypes = ewrs_specialPlaneTypes or {
 ewrs.reportingNameOverrides = {
   ["A-20G"] = "A-20G",
   ["B-17G"] = "B-17G",
+  ["M-2000C"] = "Mirage",
   ["P-51D-30-NA"] = "Mustang",
   ["SpitfireLFMkIX"] = "Spitfire",
   ["MosquitoFBMkVI"] = "Mosquito",
@@ -168,8 +172,8 @@ local function ewrsGetUnitTypeName(unit)
   return nil
 end
 
-local function ewrs_isSpecialPlaneUnit(unit)
-  return ewrs_isSpecialPlaneType(ewrsGetUnitTypeName(unit))
+local function ewrs_isSpecialPlaneUnit(unit, unitType)
+  return ewrs_isSpecialPlaneType(unitType or ewrsGetUnitTypeName(unit))
 end
 
 function ewrs.shouldHideFriendlyReportingName(name)
@@ -328,6 +332,23 @@ ewrs.resetRuntimeCache()
 
 ewrs.savedPlayerSettings = {}
 
+local ewrs_compactCategoryIds = {
+  default = 1,
+  plane = 2,
+  plane_special = 3,
+  helicopter = 4,
+}
+local ewrs_compactCategoryNames = {
+  [1] = "default",
+  [2] = "plane",
+  [3] = "plane_special",
+  [4] = "helicopter",
+}
+local ewrs_compactReferenceIds = { self = 1, bulls = 2 }
+local ewrs_compactReferenceNames = { [1] = "self", [2] = "bulls" }
+local ewrs_compactMeasurementIds = { imperial = 1, metric = 2 }
+local ewrs_compactMeasurementNames = { [1] = "imperial", [2] = "metric" }
+
 local function ewrs_clonePersistentSettings(src)
   if not src then return {} end
   return {
@@ -389,6 +410,41 @@ local function ewrs_storePlayerProfile(playerName, category, settings)
   profiles[category or "default"] = ewrs_clonePersistentSettings(settings)
 end
 
+local function ewrs_encodeCompactProfile(settings)
+  if type(settings) ~= "table" then return nil end
+  local profile = {
+    [1] = ewrs_compactReferenceIds[settings.reference],
+    [2] = ewrs_compactMeasurementIds[settings.measurements],
+    [3] = settings.rangeLimit,
+    [4] = settings.maxThreats,
+    [5] = settings.showFriendlies,
+    [6] = settings.showTankers,
+    [7] = settings.maxFriendlies,
+    [8] = settings.messages,
+    [9] = settings.reportStyle,
+    [10] = settings.customized,
+  }
+  return next(profile) and profile or nil
+end
+
+local function ewrs_decodeCompactProfile(profile)
+  if type(profile) ~= "table" then return nil end
+  local settings = {}
+  local reference = ewrs_compactReferenceNames[tonumber(profile[1])]
+  local measurements = ewrs_compactMeasurementNames[tonumber(profile[2])]
+  if reference then settings.reference = reference end
+  if measurements then settings.measurements = measurements end
+  if tonumber(profile[3]) then settings.rangeLimit = tonumber(profile[3]) end
+  if tonumber(profile[4]) then settings.maxThreats = tonumber(profile[4]) end
+  if type(profile[5]) == "boolean" then settings.showFriendlies = profile[5] end
+  if type(profile[6]) == "boolean" then settings.showTankers = profile[6] end
+  if tonumber(profile[7]) then settings.maxFriendlies = tonumber(profile[7]) end
+  if type(profile[8]) == "boolean" then settings.messages = profile[8] end
+  if tonumber(profile[9]) then settings.reportStyle = tonumber(profile[9]) end
+  if type(profile[10]) == "boolean" then settings.customized = profile[10] end
+  return next(settings) and settings or nil
+end
+
 local function ewrs_fetchPlayerProfile(playerName, category)
   if not playerName then return nil end
   local entry = ewrs.savedPlayerSettings[playerName]
@@ -413,18 +469,12 @@ local function ewrs_fetchPlayerProfile(playerName, category)
     end
   end
 
-  if (not saved) and bucket == "default" then
-    for _,profile in pairs(profiles) do
-      saved = profile
-      break
-    end
-  end
   return saved
 end
 
-function ewrs.applySavedSettings(playerName, groupID, unit)
+function ewrs.applySavedSettings(playerName, groupID, unit, unitType, unitCategory)
   if not playerName or not groupID then return end
-  local category = ewrs.getGroupCategory(unit) or "default"
+  local category = ewrs.getGroupCategory(unit, unitType, unitCategory) or "default"
   if category == "none" then category = "default" end
   local saved = ewrs_fetchPlayerProfile(playerName, category)
   if not saved then return end
@@ -471,27 +521,115 @@ function ewrs.exportPlayerSettings()
   return list
 end
 
-function ewrs.importPlayerSettings(entries)
-  ewrs.savedPlayerSettings = {}
-  if type(entries) ~= "table" then return end
-  for _,entry in ipairs(entries) do
-    if entry and entry.name then
-      if entry.profiles and type(entry.profiles)=="table" then
-        for cat,settings in pairs(entry.profiles) do
-          ewrs_storePlayerProfile(entry.name, cat, settings)
+function ewrs.exportCompactPlayerSettings()
+  local compact = {}
+  for name,_ in pairs(ewrs.savedPlayerSettings or {}) do
+    local payload = {}
+    local profiles = ewrs_getProfileTable(name)
+    for category,settings in pairs(profiles or {}) do
+      local categoryId = ewrs_compactCategoryIds[category]
+      local encoded = categoryId and ewrs_encodeCompactProfile(settings) or nil
+      if encoded then payload[categoryId] = encoded end
+    end
+    if next(payload) then compact[name] = payload end
+  end
+  return compact
+end
+
+function ewrs.importCompactPlayerSettings(compact, mergeExisting)
+  if not mergeExisting then ewrs.savedPlayerSettings = {} end
+  if type(compact) ~= "table" then return end
+  for name,payload in pairs(compact) do
+    if type(name) == "string" and type(payload) == "table" then
+      local decoded = {}
+      for categoryId,profile in pairs(payload) do
+        local category = ewrs_compactCategoryNames[tonumber(categoryId)]
+        local settings = category and ewrs_decodeCompactProfile(profile) or nil
+        if settings then decoded[category] = settings end
+      end
+      if next(decoded) then
+        local profiles = ewrs_getProfileTable(name)
+        for category,settings in pairs(decoded) do
+          if not mergeExisting or profiles[category] == nil then
+            profiles[category] = ewrs_clonePersistentSettings(settings)
+          end
         end
-        ewrs_pruneLegacyProfiles(ewrs_getProfileTable(entry.name))
-      elseif entry.settings then
-        ewrs_storePlayerProfile(entry.name, "default", entry.settings)
+        ewrs_pruneLegacyProfiles(profiles)
       end
     end
   end
 end
 
-if EWRS_PENDING_PLAYER_SETTINGS then
-  ewrs.importPlayerSettings(EWRS_PENDING_PLAYER_SETTINGS)
-  EWRS_PENDING_PLAYER_SETTINGS = nil
+function ewrs.renamePlayerSettings(oldName, newName)
+  if not oldName or not newName or oldName == newName then return end
+  if not ewrs.savedPlayerSettings[oldName] then return end
+  local oldProfiles = ewrs_getProfileTable(oldName)
+  local newProfiles = ewrs_getProfileTable(newName)
+  for category,settings in pairs(oldProfiles or {}) do
+    if newProfiles[category] == nil then
+      newProfiles[category] = settings
+    end
+  end
+  ewrs.savedPlayerSettings[oldName] = nil
 end
+
+function ewrs.renameCompactPlayerSettings(compact, oldName, newName)
+  if type(compact) ~= "table" or not oldName or not newName or oldName == newName then return end
+  local oldProfiles = compact[oldName]
+  if type(oldProfiles) ~= "table" then return end
+  local newProfiles = compact[newName]
+  if type(newProfiles) ~= "table" then
+    newProfiles = {}
+    compact[newName] = newProfiles
+  end
+  for categoryId,settings in pairs(oldProfiles) do
+    if newProfiles[categoryId] == nil then
+      newProfiles[categoryId] = settings
+    end
+  end
+  compact[oldName] = nil
+end
+
+function ewrs.importPlayerSettings(entries, mergeExisting)
+  if not mergeExisting then ewrs.savedPlayerSettings = {} end
+  if type(entries) ~= "table" then return end
+  for _,entry in ipairs(entries) do
+    if entry and entry.name then
+      if entry.profiles and type(entry.profiles)=="table" then
+        local profiles = ewrs_getProfileTable(entry.name)
+        for cat,settings in pairs(entry.profiles) do
+          if not mergeExisting or profiles[cat] == nil then
+            ewrs_storePlayerProfile(entry.name, cat, settings)
+          end
+        end
+        ewrs_pruneLegacyProfiles(ewrs_getProfileTable(entry.name))
+      elseif entry.settings then
+        local profiles = ewrs_getProfileTable(entry.name)
+        if not mergeExisting or profiles.default == nil then
+          ewrs_storePlayerProfile(entry.name, "default", entry.settings)
+        end
+      end
+    end
+  end
+end
+
+if EWRS_PENDING_PLAYER_SETTINGS_FIRST and EWRS_PENDING_PLAYER_SETTINGS then
+  ewrs.importPlayerSettings(EWRS_PENDING_PLAYER_SETTINGS, false)
+  EWRS_PENDING_PLAYER_SETTINGS = nil
+  EWRS_PENDING_PLAYER_SETTINGS_MERGE = nil
+end
+
+if EWRS_PENDING_COMPACT_PLAYER_SETTINGS then
+  ewrs.importCompactPlayerSettings(EWRS_PENDING_COMPACT_PLAYER_SETTINGS, EWRS_PENDING_PLAYER_SETTINGS_FIRST == true)
+  EWRS_PENDING_COMPACT_PLAYER_SETTINGS = nil
+end
+
+if EWRS_PENDING_PLAYER_SETTINGS then
+  ewrs.importPlayerSettings(EWRS_PENDING_PLAYER_SETTINGS, EWRS_PENDING_PLAYER_SETTINGS_MERGE)
+  EWRS_PENDING_PLAYER_SETTINGS = nil
+  EWRS_PENDING_PLAYER_SETTINGS_MERGE = nil
+end
+EWRS_PENDING_PLAYER_SETTINGS_FIRST = nil
 
 ----END OF SCRIPT OPTIONS----
 
@@ -571,33 +709,36 @@ function ewrs.buildThreatTable(activePlayer,bogeyDope)
   local rangeLimit=groupSettings.rangeLimit or 0
   local threatTable={}
   for _,obj in pairs(targets) do
-    local velocity=obj:getVelocity()
     local bogeypos=obj:getPosition()
-    local bogeyType=nil
-    local dcsTypeName=ewrsGetUnitTypeName(obj)
-    local unit=UNIT:Find(obj) if unit and dcsTypeName then bogeyType=ewrsReportingNameOverride(dcsTypeName) or UTILS.GetReportingName(dcsTypeName) end
-    if not bogeyType then bogeyType = "Unknown" end  
-    local bearing = (math.floor((ewrs.getBearing(referenceX,referenceZ,bogeypos.p.x,bogeypos.p.z)+2.5)/5)*5) % 360
-    if bearing == 0 then bearing = 360 end
-    local heading=ewrs.getHeading(velocity)
-    local aspect=ewrs.getAspect(bearing,heading)
     local range=ewrs.getDistance(referenceX,referenceZ,bogeypos.p.x,bogeypos.p.z)
     local rawRangeNm=UTILS.MetersToNM(range)
-    local altitude=bogeypos.p.y
-    local altitudeFeet=UTILS.MetersToFeet(altitude)
-    local speed=ewrs.getSpeed(velocity)
     if useMetric then
       local km=range/1000
       if km>=60 then range=UTILS.Round(km,-1) elseif km>=20 then range=UTILS.Round(km/5,0)*5 else range=UTILS.Round(km,0) end
-      speed=UTILS.Round(UTILS.MpsToKmph(speed),-1)
-      altitude=UTILS.Round(altitude,-1)
     else
       local nm=rawRangeNm
       if nm>=60 then range=UTILS.Round(nm,-1) elseif nm>=20 then range=UTILS.Round(nm/5,0)*5 else range=UTILS.Round(nm,0) end
-      speed=UTILS.Round(UTILS.MpsToKnots(speed),-1)
-      altitude=UTILS.Round(UTILS.MetersToFeet(altitude),-3)
     end
     if rangeLimit==0 or range<=rangeLimit then
+      local velocity=obj:getVelocity()
+      local bogeyType=nil
+      local dcsTypeName=ewrsGetUnitTypeName(obj)
+      local unit=UNIT:Find(obj) if unit and dcsTypeName then bogeyType=ewrsReportingNameOverride(dcsTypeName) or UTILS.GetReportingName(dcsTypeName) end
+      if not bogeyType then bogeyType = "Unknown" end
+      local bearing = (math.floor((ewrs.getBearing(referenceX,referenceZ,bogeypos.p.x,bogeypos.p.z)+2.5)/5)*5) % 360
+      if bearing == 0 then bearing = 360 end
+      local heading=ewrs.getHeading(velocity)
+      local aspect=ewrs.getAspect(bearing,heading)
+      local altitude=bogeypos.p.y
+      local altitudeFeet=UTILS.MetersToFeet(altitude)
+      local speed=ewrs.getSpeed(velocity)
+      if useMetric then
+        speed=UTILS.Round(UTILS.MpsToKmph(speed),-1)
+        altitude=UTILS.Round(altitude,-1)
+      else
+        speed=UTILS.Round(UTILS.MpsToKnots(speed),-1)
+        altitude=UTILS.Round(altitudeFeet,-3)
+      end
       local j=#threatTable+1
       threatTable[j]={}
       threatTable[j].unitType=bogeyType
@@ -637,7 +778,7 @@ function ewrs.buildThreatTable(activePlayer,bogeyDope)
           local nm=UTILS.MetersToNM(range)
           if nm>=60 then range=UTILS.Round(nm,-1) elseif nm>=20 then range=UTILS.Round(nm/5,0)*5 else range=UTILS.Round(nm,0) end
           speed=UTILS.Round(UTILS.MpsToKnots(speed),-1)
-          altitude=UTILS.Round(UTILS.MetersToFeet(altitude),-3)
+          altitude=UTILS.Round(altitudeFeet,-3)
         end
         local j=#threatTable+1
         threatTable[j]={}
@@ -660,35 +801,39 @@ function ewrs.buildThreatTable(activePlayer,bogeyDope)
   if groupSettings.showFriendlies and not bogeyDope then
     local units=ewrs.getCachedFriendlyAirUnits(activePlayer.side)
     for _,u in ipairs(units) do
-      if u:getName()~=activePlayer.unitname then
+      local unitName=u:getName()
+      if unitName~=activePlayer.unitname then
         local tp=u:getPosition()
-        local vel=u:getVelocity()
-        local bearing=(math.floor((ewrs.getBearing(referenceX,referenceZ,tp.p.x,tp.p.z)+2.5)/5)*5)%360
-        if bearing==0 then bearing=360 end
-        local heading=ewrs.getHeading(vel)
-        local aspect=ewrs.getAspect(bearing,heading)
         local range=ewrs.getDistance(referenceX,referenceZ,tp.p.x,tp.p.z)
-        local altitude=tp.p.y
-        local altitudeFeet=UTILS.MetersToFeet(altitude)
-        local speed=ewrs.getSpeed(vel)
         if useMetric then
           local km=range/1000
           if km>=60 then range=UTILS.Round(km,-1) elseif km>=20 then range=UTILS.Round(km/5,0)*5 else range=UTILS.Round(km,0) end
-          speed=UTILS.Round(UTILS.MpsToKmph(speed),-1)
-          altitude=UTILS.Round(altitude,-1)
         else
           local nm=UTILS.MetersToNM(range)
           if nm>=60 then range=UTILS.Round(nm,-1) elseif nm>=20 then range=UTILS.Round(nm/5,0)*5 else range=UTILS.Round(nm,0) end
-          speed=UTILS.Round(UTILS.MpsToKnots(speed),-1)
-          altitude=UTILS.Round(UTILS.MetersToFeet(altitude),-3)
         end
         if rangeLimit==0 or range<=rangeLimit then
-          local unit=UNIT:Find(u)
+          local unit=UNIT:FindByName(unitName)
           local bogeyType=nil
           local dcsTypeName=ewrsGetUnitTypeName(u)
           if unit and dcsTypeName then bogeyType=ewrsReportingNameOverride(dcsTypeName) or UTILS.GetReportingName(dcsTypeName) end
           if not bogeyType then bogeyType="Unknown" end
           if not ewrs.shouldHideFriendlyReportingName(bogeyType) then
+            local vel=u:getVelocity()
+            local bearing=(math.floor((ewrs.getBearing(referenceX,referenceZ,tp.p.x,tp.p.z)+2.5)/5)*5)%360
+            if bearing==0 then bearing=360 end
+            local heading=ewrs.getHeading(vel)
+            local aspect=ewrs.getAspect(bearing,heading)
+            local altitude=tp.p.y
+            local altitudeFeet=UTILS.MetersToFeet(altitude)
+            local speed=ewrs.getSpeed(vel)
+            if useMetric then
+              speed=UTILS.Round(UTILS.MpsToKmph(speed),-1)
+              altitude=UTILS.Round(altitude,-1)
+            else
+              speed=UTILS.Round(UTILS.MpsToKnots(speed),-1)
+              altitude=UTILS.Round(altitudeFeet,-3)
+            end
             local j=#threatTable+1
             threatTable[j]={}
             threatTable[j].unitType=bogeyType
@@ -706,7 +851,8 @@ function ewrs.buildThreatTable(activePlayer,bogeyDope)
       end
     end
   end
-  table.sort(threatTable,sortRanges)
+  if #threatTable==0 then return threatTable end
+  if #threatTable>1 then table.sort(threatTable,sortRanges) end
   local maxFriendlies=groupSettings.maxFriendlies or 0
   if maxFriendlies>0 then
     local friendlyCount=0
@@ -767,7 +913,8 @@ end
 
 function ewrs.outText(activePlayer, threatTable, bogeyDope, greeting)
   local status, result = pcall(function()
-    
+    if ewrs.disableMessageWhenNoThreats and not bogeyDope and greeting == nil and #threatTable == 0 then return end
+
     local message = {}
     local groupSettings = ewrs.getGroupSettingsTable(activePlayer.groupID)
     local T = L10N:ForGroup(activePlayer.groupID)
@@ -835,7 +982,7 @@ function ewrs.outText(activePlayer, threatTable, bogeyDope, greeting)
               table.insert(message,ewrs.formatContactLine(t, groupSettings, rangeUnits, altUnits, T))
             end
             shown=shown+1
-            if shown<maxThreats then table.insert(message,"\n") end
+            if shown<maxThreats then table.insert(message,"\n") else break end
           end
         end
         for k=1,#threatTable do
@@ -943,7 +1090,7 @@ function ewrs.buildFriendlyTable(friendlyNames,activePlayer)
       local nm=UTILS.MetersToNM(range)
       if nm>=20 then range=UTILS.Round(nm,-1) else range=UTILS.Round(nm,0) end
       speed=UTILS.Round(UTILS.MpsToKnots(speed),-1)
-      altitude=UTILS.Round(UTILS.MetersToFeet(altitude),-3)
+      altitude=UTILS.Round(altitudeFeet,-3)
     end
 
         local j=#friendlyTable+1
@@ -1010,6 +1157,7 @@ function ewrs.buildActivePlayers()
         end
       end
     end
+    if #ewrs.activePlayers == 0 then ewrs.closeRadarRegistry() end
   end) -- pcall
   
   if not status then
@@ -1026,24 +1174,24 @@ function ewrs.getGroupId(_unit)
   return nil
 end
 
-function ewrs.getGroupCategory(unit)
+function ewrs.getGroupCategory(unit, unitType, unitCategory)
   if not unit then return nil end
-  local unit = UNIT:Find(unit)
+  unitCategory = unitCategory or Unit.getCategoryEx(unit)
   local category = "none"
 
-  if unit and unit:IsAirPlane() then
-    if ewrs_isSpecialPlaneUnit(unit) then
+  if unitCategory == Unit.Category.AIRPLANE then
+    if ewrs_isSpecialPlaneUnit(unit, unitType) then
       category = "plane_special"
     else
       category = "plane"
     end
   end
-  if unit and unit:IsHelicopter() then category = "helicopter" end
+  if unitCategory == Unit.Category.HELICOPTER then category = "helicopter" end
   return category
 end
 
 
-function ewrs.addPlayer(playerName, groupID, unit, unitType)
+function ewrs.addPlayer(playerName, groupID, unit, unitType, unitName, unitCoalition, unitCategory)
   if not playerName or not groupID or not unit then return end
 
   local isHelo = unit:hasAttribute("Helicopters")
@@ -1058,9 +1206,9 @@ function ewrs.addPlayer(playerName, groupID, unit, unitType)
     ewrs.activePlayers[i] = {}
     ewrs.activePlayers[i].player = playerName
     ewrs.activePlayers[i].groupID = groupID
-    ewrs.activePlayers[i].unitname = unit:getName()
+    ewrs.activePlayers[i].unitname = unitName or unit:getName()
     ewrs.activePlayers[i].unitType = unitType
-    ewrs.activePlayers[i].side = unit:getCoalition() 
+    ewrs.activePlayers[i].side = unitCoalition or unit:getCoalition()
     ewrs.groupUnitTypes = ewrs.groupUnitTypes or {}
     ewrs.groupUnitTypes[tostring(groupID)] = unitType
   
@@ -1069,7 +1217,7 @@ function ewrs.addPlayer(playerName, groupID, unit, unitType)
       ewrs.addGroupSettings(tostring(groupID))
     end
 
-    ewrs.applySavedSettings(playerName, groupID, unit)
+    ewrs.applySavedSettings(playerName, groupID, unit, unitType, unitCategory)
 
   end)
   if not status then
@@ -1088,9 +1236,10 @@ function ewrs.removeActivePlayersForGroup(groupID)
     end
   end
   ewrs.activePlayers = kept
+  if #kept == 0 then ewrs.closeRadarRegistry() end
 end
 
-function ewrs.registerPlayer(playerName, groupID, unit, unitType)
+function ewrs.registerPlayer(playerName, groupID, unit, unitType, unitName, unitCoalition, unitCategory)
   if not playerName or not groupID or not unit then return end
   local stringGroupID = tostring(groupID)
   ewrs.removeActivePlayersForGroup(groupID)
@@ -1098,7 +1247,7 @@ function ewrs.registerPlayer(playerName, groupID, unit, unitType)
   ewrs.runtimeCache.groupSettings[stringGroupID] = nil
   ewrs.groupUnitTypes = ewrs.groupUnitTypes or {}
   ewrs.groupUnitTypes[stringGroupID] = unitType or unit:getTypeName()
-  ewrs.addPlayer(playerName, groupID, unit, ewrs.groupUnitTypes[stringGroupID])
+  ewrs.addPlayer(playerName, groupID, unit, ewrs.groupUnitTypes[stringGroupID], unitName, unitCoalition, unitCategory)
   ewrs.ensureGroupF10Menu(groupID)
 end
 
@@ -1126,15 +1275,71 @@ function ewrs.getDetectedTargets()
   end
 end
 
+function ewrs.closeRadarRegistry()
+  local registry = ewrs.radarRegistry
+  if not registry then return end
+  for _, eventID in ipairs({EVENTS.Birth, EVENTS.Dead, EVENTS.Crash, EVENTS.RemoveUnit, EVENTS.UnitLost}) do
+    registry:UnHandleEvent(eventID)
+  end
+  ewrs.radarRegistry = nil
+end
+
+local function ewrsAddRadar(registry, unit, name, side, exists)
+  local previous = registry.byName[name]
+  if previous then
+    registry.rows[previous.side][name] = nil
+    registry.byName[name] = nil
+  end
+  if side ~= 1 and side ~= 2 then return end
+  if exists == nil then exists = unit:isExist() end
+  if exists and (unit:hasAttribute("SAM SR") or unit:hasAttribute("EWR") or unit:hasAttribute("AWACS")) then
+    local row = {unit = unit, name = name, side = side, id = unit.id_}
+    registry.byName[name] = row
+    registry.rows[side][name] = row
+  end
+end
+
+local function ewrsNewRadarRegistry()
+  local registry = BASE:New()
+  registry.rows = {[1] = {}, [2] = {}}
+  registry.byName = {}
+  registry.birth = function(self, event)
+    if event.IniObjectCategory ~= Object.Category.UNIT then return end
+    ewrsAddRadar(self, event.IniDCSUnit, event.IniDCSUnitName, event.IniCoalition)
+  end
+  registry.remove = function(self, event)
+    if event.IniObjectCategory ~= Object.Category.UNIT then return end
+    local row = self.byName[event.IniDCSUnitName]
+    if row and row.id == event.IniDCSUnit.id_ then
+      self.rows[row.side][row.name] = nil
+      self.byName[row.name] = nil
+    end
+  end
+  registry:HandleEvent(EVENTS.Birth, registry.birth)
+  for _, eventID in ipairs({EVENTS.Dead, EVENTS.Crash, EVENTS.RemoveUnit, EVENTS.UnitLost}) do
+    registry:HandleEvent(eventID, registry.remove)
+  end
+  -- Include radars born before the first report; later births use the same dispatcher.
+  for side = 1, 2 do
+    for _, group in ipairs(coalition.getGroups(side)) do
+      for _, unit in ipairs(group:getUnits()) do
+        local exists = unit:isExist()
+        if exists then ewrsAddRadar(registry, unit, unit:getName(), side, exists) end
+      end
+    end
+  end
+  return registry
+end
+
   function ewrs.findDetectedTargets(side)
+    if not ewrs.radarRegistry then ewrs.radarRegistry = ewrsNewRadarRegistry() end
+    local registry = ewrs.radarRegistry
     local dets = {}
     local tgtCoal = side == "red" and 2 or 1
 
-    for _, grp in ipairs(coalition.getGroups(tgtCoal)) do
-      for _, u in ipairs(grp:getUnits()) do
-        if u:isExist() 
-          and (u:hasAttribute("SAM SR") or u:hasAttribute("EWR") or u:hasAttribute("AWACS")) 
-        then
+    for name, row in pairs(registry.rows[tgtCoal]) do
+        local u = row.unit
+        if u:isExist() then
           for _, d in ipairs(u:getController():getDetectedTargets(Controller.Detection.RADAR)) do
             local obj = d.object
             if obj and obj:isExist() and obj:inAir()
@@ -1143,8 +1348,10 @@ end
               dets[obj:getName()] = obj
             end
           end
+        else
+          registry.rows[tgtCoal][name] = nil
+          registry.byName[name] = nil
         end
-      end
     end
 
     local out = {}
@@ -1443,7 +1650,7 @@ ewrs.update()
 if not ewrs.onDemand then
   timer.scheduleFunction(function(param, time)
   ewrs.resetRuntimeCache()
-  ewrs.getDetectedTargets()
+  if #ewrs.activePlayers>0 then ewrs.getDetectedTargets() end
   ewrs.inAuto=true
   for i = 1, #ewrs.activePlayers do
     local p = ewrs.activePlayers[i]
